@@ -1,0 +1,191 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "cleanupPeriodDays": 30,
+  "skillListingBudgetFraction": 0.02,
+  "env": {
+    "API_TIMEOUT_MS": "1200000",
+    "BASH_DEFAULT_TIMEOUT_MS": "300000",
+    "BASH_MAX_TIMEOUT_MS": "900000",
+    "CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY": "8",
+    "CLAUDE_CODE_AUTO_COMPACT_WINDOW": "400000",
+    "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "70",
+    "DISABLE_TELEMETRY": "1",
+    "DO_NOT_TRACK": "1",
+    "FORCE_HYPERLINK": "1",
+    "CLAUDE_STATUS_GIT_CACHE_SECONDS": "5",
+    "CLAUDE_STATUS_LINKS": "1"
+  },
+  "attribution": {
+    "commit": "",
+    "pr": ""
+  },
+  "includeGitInstructions": false,
+  "permissions": {
+    "allow": [
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git show:*)",
+      "Bash(git branch:*)",
+      "Bash(git add:*)",
+      "Bash(uv run pytest:*)",
+      "Bash(uv run ruff:*)",
+      "Bash(uv run ty:*)",
+      "Bash(uv sync:*)",
+      "Bash(uv lock:*)",
+      "Bash(uv tree:*)",
+      "Bash(uv pip list:*)"
+    ],
+    "deny": [
+      "Read(./**/.env)",
+      "Read(./**/.env.*)",
+      "Read(./secrets/**)",
+      "Read(./config/credentials.json)",
+      "Read(./**/id_rsa)",
+      "Read(./**/id_ed25519)",
+      "Read(./**/*.pem)",
+      "Read(./**/*.key)",
+      "Read(./**/*.p12)",
+      "Read(./**/*.pfx)",
+      "Read(./**/*.jks)",
+      "Read(./**/*.keystore)",
+      "Read(./**/*.ovpn)",
+      "Read(./**/.netrc)",
+      "Read(./**/.npmrc)",
+      "Read(./**/.pypirc)",
+      "Read(./**/.pgpass)",
+      "Read(./**/.git-credentials)",
+      "Read(./**/.aws/**)",
+      "Read(./**/.kube/**)",
+      "Read(./**/kubeconfig)",
+      "Read(./**/.docker/config.json)",
+      "Read(./**/terraform.tfstate)",
+      "Read(./**/terraform.tfstate.*)",
+      "Read(./**/.terraform/**)"
+    ],
+    "ask": [
+      "Bash(git reset:*)",
+      "Bash(git clean:*)",
+      "Bash(git rebase:*)",
+      "Bash(git push:*)",
+      "Bash(gh pr merge:*)",
+      "Bash(uv publish:*)",
+      "Bash(twine:*)"
+    ],
+    "defaultMode": "auto"
+  },
+  "model": "claude-opus-5",
+  "fallbackModel": [
+    "claude-opus-5",
+    "claude-sonnet-5"
+  ],
+  "skillOverrides": {
+    "karpathy-guidelines": "off",
+    "slop-patrol": "off"
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/bin/hooks/session_context.sh"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/bin/hooks/protected_paths_guard.sh"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/bin/hooks/ruff_on_edit.py"
+          }
+        ]
+      },
+      {
+        "matcher": "Read|Grep|Glob|Bash|Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/bin/hooks/read_logger.py"
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/bin/hooks/notify.sh"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "printf '{\"message\":\"Claude finished\",\"title\":\"Claude Code\"}' | ~/.claude/bin/hooks/notify.sh"
+          }
+        ]
+      }
+    ]
+  },
+  "statusLine": {
+    "type": "command",
+    "command": "~/.claude/bin/statusline.py",
+    "padding": 1,
+    "refreshInterval": 5
+  },
+  "enabledPlugins": {
+    "github@claude-plugins-official": false,
+    "claude-code-setup@claude-plugins-official": false,
+    "superpowers@superpowers-marketplace": true,
+    "humanizer@humanizer": true
+  },
+  "extraKnownMarketplaces": {
+    "superpowers-marketplace": {
+      "source": {
+        "source": "github",
+        "repo": "obra/superpowers-marketplace"
+      }
+    },
+    "humanizer": {
+      "source": {
+        "source": "github",
+        "repo": "blader/humanizer"
+      }
+    }
+  },
+  "alwaysThinkingEnabled": true,
+  "effortLevel": "medium",
+  "advisorModel": "opus",
+  "askUserQuestionTimeout": "5m",
+  "autoUpdatesChannel": "stable",
+  "tui": "fullscreen",
+  "autoMemoryEnabled": true,
+  "showThinkingSummaries": true,
+  "claudeMdExcludes": [
+    "**/vendor/**/CLAUDE.md",
+    "**/node_modules/**/CLAUDE.md",
+    "**/.venv/**/CLAUDE.md"
+  ],
+  "theme": "dark-daltonized",
+  "autoCompactEnabled": true,
+  "fileCheckpointingEnabled": true
+}
