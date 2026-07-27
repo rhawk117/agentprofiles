@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "hooks": {
+    "subagentStart": [
+      {
+        "type": "command",
+        "matcher": "scout|engineer|code-analyst|plan-critic",
+        "bash": "$HOME/copilot/bin/hooks/subagent_context.py",
+        "timeoutSec": 10
+      }
+    ],
+    "preCompact": [
+      {
+        "type": "command",
+        "bash": "$HOME/copilot/bin/hooks/compaction_snapshot.py snapshot",
+        "timeoutSec": 10
+      }
+    ],
+    "postToolUse": [
+      {
+        "type": "command",
+        "bash": "D=\"${COPILOT_HOME:-$HOME/.copilot}/compaction-state\"; [ -n \"$(ls -A \"$D\"/*.pending 2>/dev/null)\" ] || exit 0; exec $HOME/copilot/bin/hooks/compaction_snapshot.py reinject",
+        "timeoutSec": 10
+      }
+    ],
+    "sessionStart": [
+      {
+        "type": "command",
+        "bash": "$HOME/copilot/bin/hooks/compaction_snapshot.py rehydrate",
+        "timeoutSec": 10
+      }
+    ]
+  }
+}
