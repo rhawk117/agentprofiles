@@ -1,0 +1,40 @@
+{
+  "version": 1,
+  "hooks": {
+    "preToolUse": [
+      {
+        "type": "command",
+        "matcher": "bash",
+        "bash": "$HOME/copilot/bin/hooks/tool_filter.py rewrite",
+        "timeoutSec": 5
+      }
+    ],
+    "postToolUse": [
+      {
+        "type": "command",
+        "matcher": "bash",
+        "bash": "$HOME/copilot/bin/hooks/tool_filter.py truncate",
+        "timeoutSec": 10
+      },
+      {
+        "type": "command",
+        "matcher": "view",
+        "bash": "$HOME/copilot/bin/hooks/tool_filter.py dedupe",
+        "timeoutSec": 10
+      },
+      {
+        "type": "command",
+        "matcher": "edit|create|apply_patch|str_replace_editor",
+        "bash": "$HOME/copilot/bin/hooks/tool_filter.py invalidate",
+        "timeoutSec": 5
+      }
+    ],
+    "preCompact": [
+      {
+        "type": "command",
+        "bash": "$HOME/copilot/bin/hooks/tool_filter.py reset",
+        "timeoutSec": 5
+      }
+    ]
+  }
+}

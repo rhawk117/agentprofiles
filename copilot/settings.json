@@ -1,0 +1,145 @@
+{
+  "model": "gpt-5.6-luna",
+  "effortLevel": "high",
+  "autoUpdatesChannel": "stable",
+  "experimental": true,
+  "askUser": true,
+  "bashEnv": true,
+  "beep": true,
+  "keepAlive": "busy",
+  "memory": true,
+  "toolSearch": true,
+  "showReasoning": true,
+  "includeCoAuthoredBy": false,
+  "mergeStrategy": "merge",
+  "respectGitignore": true,
+  "storeTokenPlaintext": false,
+  "disableAllHooks": false,
+  "enableAllGithubMcpTools": true,
+  "remote": "off",
+  "remoteExport": false,
+  "permissions": {
+    "disableBypassPermissionsMode": "disable"
+  },
+  "colorMode": "high-contrast",
+  "theme": "high-contrast",
+  "mouse": true,
+  "scrollbar": true,
+  "renderMarkdown": true,
+  "renderHexColors": true,
+  "terminalProgress": true,
+  "updateTerminalTitle": true,
+  "showTipsOnStartup": true,
+  "stream": true,
+  "tabs": {
+    "enabled": true
+  },
+  "ide": {
+    "autoConnect": true
+  },
+  "extensions": {
+    "mode": "load_only"
+  },
+  "customAgents": {
+    "defaultLocalOnly": true
+  },
+  "dynamicRetrieval": {
+    "skills": true,
+    "mcp": true
+  },
+  "builtInAgents": {
+    "rubberDuck": true,
+    "rubberDuckAutoInvoke": true
+  },
+  "subagents": {
+    "agents": {
+      "rubber-duck": {
+        "model": "claude-sonnet-5",
+        "effortLevel": "high",
+        "contextTier": "default"
+      },
+      "context-engineering:context-architect": {
+        "model": "claude-sonnet-5",
+        "effortLevel": "medium",
+        "contextTier": "long_context"
+      },
+      "general-purpose": {
+        "model": "gpt-5.6-luna",
+        "effortLevel": "medium",
+        "contextTier": "default"
+      },
+      "explore": {
+        "model": "claude-sonnet-5",
+        "effortLevel": "low",
+        "contextTier": "long_context"
+      },
+      "code-review": {
+        "model": "claude-opus-4.8",
+        "effortLevel": "xhigh",
+        "contextTier": "default"
+      },
+      "security-review": {
+        "model": "claude-opus-4.8",
+        "effortLevel": "xhigh",
+        "contextTier": "default"
+      }
+    },
+    "disabledSubagents": [],
+    "maxConcurrency": 10,
+    "maxDepth": 3
+  },
+  "disabledSkills": [],
+  "disabledMcpServers": [],
+  "allowedUrls": [
+    // ...redacted ;)
+  ],
+  "deniedUrls": [],
+  "extraKnownMarketplaces": {
+    "anthropic-agent-skills": {
+      "source": {
+        "source": "github",
+        "repo": "anthropics/skills"
+      }
+    },
+    "superpowers-marketplace": {
+      "source": {
+        "source": "github",
+        "repo": "obra/superpowers-marketplace"
+      }
+    },
+    "karpathy-skills": {
+      "source": {
+        "source": "github",
+        "repo": "forrestchang/andrej-karpathy-skills"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "superpowers@superpowers-marketplace": true,
+    "agent-council@awesome-copilot": true,
+    "context-engineering@awesome-copilot": true,
+    "andrej-karpathy-skills@karpathy-skills": true,
+    "document-skills@anthropic-agent-skills": true
+  },
+  "footer": {
+    "showModelEffort": true,
+    "showDirectory": true,
+    "showBranch": true,
+    "showContextWindow": false,
+    "showQuota": true,
+    "showAiUsed": true,
+    "showAgent": true,
+    "showCodeChanges": true,
+    "showUsername": false,
+    "showSandbox": true,
+    "showYolo": true,
+    "showCiStatus": true,
+    "showPullRequest": true,
+    "showCustom": true
+  },
+  "statusLine": {
+    "type": "command",
+    "command": "$HOME/copilot/bin/statusline.py",
+    "padding": 0
+  }
+}
