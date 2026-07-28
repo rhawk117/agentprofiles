@@ -5,42 +5,42 @@
     "sessionStart": [
       {
         "type": "command",
-        "bash": "$HOME/copilot/bin/hooks/session_counters.py reset",
+        "bash": "${COPILOT_HOME:-$HOME/.copilot}/hooks/bin/session_counters.py reset",
         "timeoutSec": 5
       }
     ],
     "postToolUse": [
       {
         "type": "command",
-        "bash": "$HOME/copilot/bin/hooks/session_counters.py tool",
+        "bash": "${COPILOT_HOME:-$HOME/.copilot}/hooks/bin/session_counters.py tool",
         "timeoutSec": 5
       }
     ],
     "userPromptSubmitted": [
       {
         "type": "command",
-        "bash": "$HOME/copilot/bin/hooks/session_counters.py turn",
+        "bash": "${COPILOT_HOME:-$HOME/.copilot}/hooks/bin/session_counters.py turn",
         "timeoutSec": 5
       }
     ],
     "errorOccurred": [
       {
         "type": "command",
-        "bash": "$HOME/copilot/bin/hooks/session_counters.py error",
+        "bash": "${COPILOT_HOME:-$HOME/.copilot}/hooks/bin/session_counters.py error",
         "timeoutSec": 5
       }
     ],
     "subagentStart": [
       {
         "type": "command",
-        "bash": "$HOME/copilot/bin/hooks/session_counters.py agent",
+        "bash": "${COPILOT_HOME:-$HOME/.copilot}/hooks/bin/session_counters.py agent",
         "timeoutSec": 5
       }
     ],
     "preCompact": [
       {
         "type": "command",
-        "bash": "$HOME/copilot/bin/hooks/session_counters.py compact",
+        "bash": "${COPILOT_HOME:-$HOME/.copilot}/hooks/bin/session_counters.py compact",
         "timeoutSec": 5
       }
     ]

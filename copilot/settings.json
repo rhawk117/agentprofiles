@@ -137,7 +137,7 @@
   },
   "statusLine": {
     "type": "command",
-    "command": "$HOME/copilot/bin/statusline.py",
+    "command": "${COPILOT_HOME:-$HOME/.copilot}/statusline.py",
     "padding": 0
   }
 }
