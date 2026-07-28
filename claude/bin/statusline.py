@@ -14,6 +14,9 @@ GIT_CACHE_TTL = int(os.environ.get("CLAUDE_STATUS_GIT_CACHE_SECONDS", "5"))
 CACHE_DIR = (
     Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "claude-statusline"
 )
+PER_MILLION = 1_000_000
+MS_PER_HOUR = 3_600_000
+BURN_MIN_MS = 60_000  # below a minute the $/hr figure is noise
 
 _NC = os.environ.get("NO_COLOR") is not None
 
@@ -35,6 +38,8 @@ BLUE = _c("\033[34m")
 MAGENTA = _c("\033[35m")
 SEP = f"{GRAY}  ·  {RESET}"
 
+ORANGE = _c("\033[38;5;208m")
+
 # Semantic color per permission mode.
 MODE_COLORS = {
     "default": GRAY,
@@ -43,6 +48,24 @@ MODE_COLORS = {
     "acceptEdits": YELLOW,
     "dontAsk": MAGENTA,
     "bypassPermissions": RED + BOLD,
+}
+
+VENDOR_COLORS = {"claude": ORANGE, "gpt": CYAN, "google": MAGENTA}
+
+# Glyph and text attributes per verdict recorded in model-rates.json.
+VERDICT_STYLES = {
+    "amazing": ("★", BOLD),
+    "out-classed": ("✧", ""),
+    "niche": ("◇", DIM + ITALIC),
+    "legacy": ("◴", DIM + ITALIC),
+}
+
+EFFORT_COLORS = {
+    "low": GREEN,
+    "medium": CYAN,
+    "high": YELLOW,
+    "xhigh": ORANGE,
+    "max": RED,
 }
 
 
@@ -91,6 +114,80 @@ def grad_color(pct: int) -> str:
     return f"\033[38;2;{r};{g};0m"
 
 
+def load_rates() -> dict:
+    """First readable model-rates.json wins; absence disables cost segments."""
+    override = os.environ.get("CLAUDE_MODEL_RATES")
+    candidates = [Path(override)] if override else []
+    candidates.append(Path.home() / ".claude" / "model-rates.json")
+    # __file__ resolves through the install symlink back into the repo checkout.
+    candidates.append(Path(__file__).resolve().parent.parent / "model-rates.json")
+    for path in candidates:
+        try:
+            parsed = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if isinstance(parsed, dict):
+            return parsed
+    return {}
+
+
+def model_rates(model_id: str, table: dict) -> dict:
+    """Exact match on the model id, else the longest key that prefixes it."""
+    if not model_id:
+        return {}
+    entry = table.get(model_id)
+    if isinstance(entry, dict):
+        return entry
+    matches = [
+        (key, value)
+        for key, value in table.items()
+        if not key.startswith("_")
+        and isinstance(value, dict)
+        and model_id.startswith(key)
+    ]
+    if not matches:
+        return {}
+    return max(matches, key=lambda item: len(item[0]))[1]
+
+
+def model_badge(name: str, rates: dict, effort: str, thinking: bool) -> str:
+    glyphs = ""
+    attrs = ""
+    verdicts = rates.get("verdicts")
+    for verdict in verdicts if isinstance(verdicts, list) else []:
+        style = VERDICT_STYLES.get(str(verdict))
+        if style is None:
+            continue
+        glyphs += style[0]
+        attrs += style[1]
+
+    color = VENDOR_COLORS.get(str(rates.get("vendor")), "")
+    badge = f"{color}{attrs or BOLD}{name}{RESET}"
+    if glyphs:
+        badge = f"{color}{glyphs}{RESET} {badge}"
+    if effort:
+        badge += f" {EFFORT_COLORS.get(effort, GRAY)}[{effort}]{RESET}"
+    if thinking:
+        badge += f" {MAGENTA}✻{RESET}"
+    return badge
+
+
+def context_cost(usage: dict, rates: dict, fast: bool) -> float:
+    """Dollar cost of sending the current context once, at the model's rates."""
+    if not rates:
+        return 0.0
+    fast_in = rates.get("fast_input") if fast else None
+    fast_out = rates.get("fast_output") if fast else None
+    priced = (
+        ("input_tokens", fast_in if fast_in is not None else rates.get("input")),
+        ("output_tokens", fast_out if fast_out is not None else rates.get("output")),
+        ("cache_read_input_tokens", rates.get("cache_read")),
+        ("cache_creation_input_tokens", rates.get("cache_write")),
+    )
+    total = sum(as_int(usage.get(key)) * as_float(rate) for key, rate in priced)
+    return total / PER_MILLION
+
+
 def hash_bar(pct: int, width: int) -> str:
     """Bracketed [###----] gauge, fill colored on the green->red gradient."""
     pct = max(0, min(100, pct))
@@ -105,6 +202,87 @@ def gauge(label: str, pct: int, width: int, tail: str = "") -> str:
     if tail:
         seg += f" {tail}"
     return seg
+
+
+def context_gauge(used_pct: int, tokens: int, window: int, compact_at: int) -> str:
+    """Context bar with the auto-compact threshold marked in-line as a `·` cell,
+    so one gauge carries both figures instead of two side by side."""
+    used_pct = max(0, min(100, used_pct))
+    counts = f"{GRAY}◌ {human(tokens)}/{human(window)}{RESET}" if window > 0 else ""
+
+    filled = min(CTX_W, used_pct * CTX_W // 100)
+    cells = ["#" if i < filled else "-" for i in range(CTX_W)]
+    marker = -1
+    if compact_at > 0 and window > 0:
+        compact_pct = max(0, min(100, compact_at * 100 // window))
+        marker = min(CTX_W - 1, max(0, -(-compact_pct * CTX_W // 100) - 1))
+        cells[marker] = "·"
+
+    painted = []
+    for i, cell in enumerate(cells):
+        if i == marker:
+            painted.append(f"{YELLOW}{ITALIC}{cell}{RESET}")
+        elif cell == "#":
+            painted.append(f"{grad_color(used_pct)}{cell}{RESET}")
+        else:
+            painted.append(f"{GRAY}{cell}{RESET}")
+
+    seg = (
+        f"{YELLOW}◉{RESET} {GRAY}[{RESET}{''.join(painted)}{GRAY}]{RESET} "
+        f"{grad_color(used_pct)}{used_pct}%{RESET}"
+    )
+    if counts:
+        seg += f"  {counts}"
+    if compact_at > 0:
+        left = human(max(0, compact_at - tokens))
+        seg += f"  {YELLOW}{ITALIC}{left} left{RESET}"
+    return seg
+
+
+def rate_limit_state(data: dict) -> dict:
+    """Rate limits are account-wide and missing from many payloads, so the last
+    values seen are recorded and replayed rather than blinking out mid-session.
+    A remembered window is dropped once its reset time has passed."""
+    cache = CACHE_DIR / "rate-limits.json"
+    try:
+        remembered = json.loads(cache.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        remembered = {}
+    if not isinstance(remembered, dict):
+        remembered = {}
+
+    now = datetime.now(timezone.utc)
+    limits = {}
+    for key, entry in remembered.items():
+        if not isinstance(entry, dict):
+            continue
+        resets = reset_dt(entry.get("resets_at"))
+        if resets is not None and resets <= now:
+            continue
+        limits[key] = {**entry, "stale": True}
+
+    fresh = {}
+    for key in ("five_hour", "seven_day"):
+        pct = dig(data, "rate_limits", key, "used_percentage")
+        if pct is None:
+            continue
+        fresh[key] = {
+            "pct": as_int(pct),
+            "resets_at": dig(data, "rate_limits", key, "resets_at"),
+            "stale": False,
+        }
+    if not fresh:
+        return limits
+
+    limits.update(fresh)
+    try:
+        CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        tmp = cache.with_name(f"{cache.name}.{os.getpid()}.tmp")
+        tmp.write_text(json.dumps(limits), encoding="utf-8")
+        tmp.replace(cache)
+    except OSError:
+        pass
+    return limits
 
 
 def human(tokens: int) -> str:
@@ -129,21 +307,28 @@ def human_dur(ms: int) -> str:
     return f"{h}h{m:02d}m"
 
 
-def fmt_reset(value) -> str:
-    dt = None
+def reset_dt(value):
+    """Reset stamps arrive as epoch seconds or ISO-8601 depending on the field."""
+    if value is None or isinstance(value, bool):
+        return None
     if isinstance(value, (int, float)) or (isinstance(value, str) and value.isdigit()):
         try:
-            dt = datetime.fromtimestamp(int(float(value)), tz=timezone.utc).astimezone()
+            return datetime.fromtimestamp(
+                int(float(value)), tz=timezone.utc
+            ).astimezone()
         except (OverflowError, OSError, ValueError):
-            return ""
-    elif isinstance(value, str):
+            return None
+    if isinstance(value, str):
         try:
-            dt = datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone()
+            return datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone()
         except ValueError:
-            return ""
-    if dt is None:
-        return ""
-    return dt.strftime("%I:%M%p").lstrip("0").lower()
+            return None
+    return None
+
+
+def fmt_reset(value) -> str:
+    dt = reset_dt(value)
+    return dt.strftime("%I:%M%p").lstrip("0").lower() if dt else ""
 
 
 def _cache_slug(session_id: str) -> str:
@@ -324,6 +509,11 @@ def main() -> int:
         return 0
 
     model = dig(data, "model", "display_name", default="claude")
+    rates = model_rates(str(dig(data, "model", "id", default="")), load_rates())
+    effort = str(dig(data, "effort", "level", default=""))
+    thinking = bool(dig(data, "thinking", "enabled", default=False))
+    fast = bool(dig(data, "fast_mode", default=False))
+    usage = dig(data, "context_window", "current_usage", default={}) or {}
     cwd = dig(data, "workspace", "current_dir", default=os.getcwd())
     session_id = str(dig(data, "session_id", default="default"))
     transcript_path = str(dig(data, "transcript_path", default=""))
@@ -352,7 +542,7 @@ def main() -> int:
     stats = session_stats(transcript_path, session_id)
 
     # ---- line 1: identity, mode, location, git --------------------------
-    line1 = f"{BOLD}{model}{RESET}"
+    line1 = model_badge(str(model), rates, effort, thinking)
     mode = stats.get("mode") or ""
     if mode and mode != "default":
         line1 += f" {MODE_COLORS.get(mode, MAGENTA)}{ITALIC}{mode}{RESET}"
@@ -379,19 +569,17 @@ def main() -> int:
             line1 += f" {MAGENTA}{''.join(sync)}{RESET}"
 
     # ---- line 2: gauges (context, compact, rate limits) -----------------
-    tail = f"{GRAY}{human(tokens)}/{human(window)}{RESET}" if window > 0 else ""
-    gauges = [gauge("ctx", used_pct, CTX_W, tail)]
-    if compact_at > 0:
-        cpct = min(100, tokens * 100 // compact_at)
-        left = f"{DIM}{ITALIC}{human(max(0, compact_at - tokens))} left{RESET}"
-        gauges.append(gauge("cmp", cpct, LIM_W, left))
+    gauges = [context_gauge(used_pct, tokens, window, compact_at)]
+    limits = rate_limit_state(data)
     for key, label in (("five_hour", "5h"), ("seven_day", "7d")):
-        pct = dig(data, "rate_limits", key, "used_percentage")
-        if pct is None:
+        entry = limits.get(key)
+        if not entry:
             continue
-        stamp = fmt_reset(dig(data, "rate_limits", key, "resets_at"))
+        stamp = fmt_reset(entry.get("resets_at"))
         tail = f"{DIM}{ITALIC}{stamp}{RESET}" if stamp else ""
-        gauges.append(gauge(label, as_int(pct), LIM_W, tail))
+        if entry.get("stale"):
+            label = f"{DIM}{label}{RESET}"
+        gauges.append(gauge(label, as_int(entry.get("pct")), LIM_W, tail))
     line2 = SEP.join(gauges)
 
     # ---- line 3: session activity ---------------------------------------
@@ -412,13 +600,28 @@ def main() -> int:
     if cost_usd > 0:
         ccol = GREEN if cost_usd < 1 else YELLOW if cost_usd < 5 else RED
         act.append(f"{ccol}${cost_usd:.2f}{RESET}")
+    msg_cost = context_cost(usage, rates, fast)
+    if msg_cost > 0:
+        act.append(f"{GRAY}~${msg_cost:.2f}/msg{RESET}")
+    if cost_usd > 0 and dur_ms >= BURN_MIN_MS:
+        act.append(f"{GRAY}${cost_usd * MS_PER_HOUR / dur_ms:.2f}/hr{RESET}")
+    cached = as_int(usage.get("cache_read_input_tokens"))
+    if tokens > 0 and cached > 0:
+        hit = min(100, cached * 100 // tokens)
+        act.append(f"{GRAY}cache{RESET} {grad_color(100 - hit)}{hit}%{RESET}")
     if dur_ms > 0:
         act.append(f"{DIM}{ITALIC}{human_dur(dur_ms)}{RESET}")
     if version:
         act.append(f"{DIM}{ITALIC}v{version}{RESET}")
     line3 = SEP.join(act)
 
-    print(f"{line1}\n{line2}\n{line3}")
+    lines = [line1, line2, line3]
+    if dig(data, "exceeds_200k_tokens", default=False) and (
+        os.environ.get("CLAUDE_STATUS_NO_ALERT") != "1"
+    ):
+        lines.insert(1, f"{RED}{BOLD}(!) LONG_CONTEXT · premium input rate (!){RESET}")
+
+    print("\n".join(lines))
     return 0
 
 
