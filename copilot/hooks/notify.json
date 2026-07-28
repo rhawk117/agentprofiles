@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "hooks": {
+    "notification": [
+      {
+        "type": "command",
+        "bash": "${COPILOT_HOME:-$HOME/.copilot}/hooks/bin/notify.sh",
+        "timeoutSec": 10
+      }
+    ]
+  }
+}

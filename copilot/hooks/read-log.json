@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "hooks": {
+    "postToolUse": [
+      {
+        "type": "command",
+        "bash": "${COPILOT_HOME:-$HOME/.copilot}/hooks/bin/read_logger.py",
+        "timeoutSec": 10
+      }
+    ]
+  }
+}

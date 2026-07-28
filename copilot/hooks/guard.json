@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "hooks": {
+    "preToolUse": [
+      {
+        "type": "command",
+        "bash": "${COPILOT_HOME:-$HOME/.copilot}/hooks/bin/protected_paths_guard.sh",
+        "timeoutSec": 5
+      }
+    ]
+  }
+}
