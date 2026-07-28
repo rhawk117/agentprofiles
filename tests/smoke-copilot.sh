@@ -99,6 +99,23 @@ assert_eq "tool-filter lives in ideas/" \
 assert_eq "install.sh never mentions ideas" "$(grep -c 'ideas' "$REPO/install.sh")" "0"
 
 # --------------------------------------------------------------------------
+group "installer manifest"
+
+mf="$(bash "$REPO/install.sh" --tree copilot --print-manifest | cut -f2)"
+# ~/.copilot holds session-store.db, session-state/ and logs/. The installer names
+# its directories exactly and must never enumerate the config-dir root.
+assert_eq "only the three named files sit at the top level" \
+  "$(printf '%s\n' "$mf" | grep -cv /)" "3"
+# 0 bytes in this repo. Linking it over a real one would blank the user's instructions.
+assert_lacks "copilot-instructions.md is not managed" "$mf" "copilot-instructions"
+assert_lacks "byte-compiled output is not managed" "$mf" "__pycache__"
+# hooks and hooks/bin are both managed directories; the parent must not also emit
+# the child as an entry, or hooks/bin would be symlinked wholesale.
+assert_eq "hooks/bin is enumerated, not linked as a directory" \
+  "$(printf '%s\n' "$mf" | grep -cx 'hooks/bin')" "0"
+assert_has "hooks/bin contents are managed" "$mf" "hooks/bin/protected_paths_guard.sh"
+
+# --------------------------------------------------------------------------
 group "statusline"
 
 out="$(statusline <"$FIXTURES/statusline-full.json")"

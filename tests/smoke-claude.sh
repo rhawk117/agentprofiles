@@ -288,6 +288,15 @@ out="$(printf '{"message":"hi","title":"test"}' | PATH="$sandbox" "$HOOKS/notify
 assert_eq "exits 0 with no notifier available" "$?" "0"
 
 # --------------------------------------------------------------------------
+group "installer manifest"
+
+# Frozen. The installer grew a second tree; the set of paths it links into
+# ~/.claude must not have moved as a side effect.
+assert_eq "the Claude manifest is unchanged" \
+  "$(bash "$REPO/install.sh" --tree claude --print-manifest | cut -f2 | sort | tr '\n' ' ')" \
+  "CLAUDE.md agents/code-analyst.md agents/engineer.md agents/plan-critic.md agents/scout.md bin/hooks/notify.sh bin/hooks/protected_paths_guard.sh bin/hooks/read_logger.py bin/hooks/ruff_on_edit.py bin/hooks/session_context.sh bin/statusline.py model-rates.json settings.json skills/pysymbols "
+
+# --------------------------------------------------------------------------
 group "settings.json wiring"
 
 python3 - "$CLAUDE/settings.json" "$CLAUDE" <<'PY'
