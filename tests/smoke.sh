@@ -105,10 +105,22 @@ assert_has "alert reports the written volume" "$(NO_COLOR=1 statusline <"$big")"
 # 200k at the 1h rate of $10/MTok is $2.00, the figure ~$/msg is not charging for.
 assert_has "alert prices them at the 1h rate" "$(NO_COLOR=1 statusline <"$big")" '~$2.00 if 1h TTL'
 assert_eq "alert adds a fourth line" "$(printf '%s\n' "$out" | wc -l)" "4"
-# Deliberately steady, not blinking: the statusline repaints every 5s, so a blink
-# attribute compounds into flicker. Pinned so the choice cannot drift unnoticed.
-assert_lacks "alert does not blink" "$out" "$(printf '\033[5m')"
-assert_has "alert is red and bold instead" "$out" "$(printf '\033[91m\033[1m')"
+assert_has "alert is red and bold" "$out" "$(printf '\033[91m\033[1m')"
+# The alert flashes by toggling underline on alternate seconds rather than by SGR 5,
+# which Windows Terminal ignores. Phase is read off the wall clock, so it is checked
+# against fixed timestamps here instead of by running the statusline twice.
+assert_eq "pulse alternates with the second" \
+  "$(python3 -c "
+import importlib.util
+s=importlib.util.spec_from_file_location('sl','$CLAUDE/bin/statusline.py')
+m=importlib.util.module_from_spec(s); s.loader.exec_module(m)
+print(' '.join('on' if m.pulse(t) == '\033[4m' else 'off' for t in (100.0, 101.0, 102.4, 103.9)))")" \
+  "off on off on"
+# refreshInterval must stay odd, or idle repaints land on one phase and never flash.
+assert_eq "refreshInterval keeps the pulse alternating while idle" \
+  "$(python3 -c "
+import json
+print(json.load(open('$CLAUDE/settings.json'))['statusLine']['refreshInterval'] % 2)")" "1"
 out="$(CLAUDE_STATUS_NO_ALERT=1 statusline <"$big")"
 assert_lacks "alert suppressed by CLAUDE_STATUS_NO_ALERT" "$out" "CACHE_WRITE"
 

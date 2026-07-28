@@ -30,6 +30,7 @@ RESET = _c("\033[0m")
 BOLD = _c("\033[1m")
 DIM = _c("\033[2m")
 ITALIC = _c("\033[3m")
+UNDERLINE = _c("\033[4m")
 GRAY = _c("\033[90m")
 GREEN = _c("\033[32m")
 YELLOW = _c("\033[33m")
@@ -189,6 +190,16 @@ def context_cost(usage: dict, rates: dict, fast: bool) -> float:
     return total / PER_MILLION
 
 
+def pulse(now: float) -> str:
+    """Underline that alternates once a second, so the alert flashes instead of
+    sitting there. The phase comes off the wall clock rather than a stored counter,
+    which keeps it a steady square wave however irregularly the line repaints —
+    and with refreshInterval at an odd number of seconds it also flips on every
+    idle repaint rather than aliasing to one phase.
+    """
+    return UNDERLINE if int(now) % 2 else ""
+
+
 def cache_write_alert(usage: dict, rates: dict) -> str:
     """Cache writes bill at 1.25x base input for a 5m TTL and 2x for 1h, but the
     payload reports one undifferentiated token count. context_cost() prices the
@@ -206,7 +217,7 @@ def cache_write_alert(usage: dict, rates: dict) -> str:
     if written * (dear - cheap) / PER_MILLION < CACHE_TTL_ALERT_USD:
         return ""
     return (
-        f"{RED}{BOLD}(!) CACHE_WRITE {human(written)} · "
+        f"{pulse(time.time())}{RED}{BOLD}(!) CACHE_WRITE {human(written)} · "
         f"~${written * dear / PER_MILLION:.2f} if 1h TTL (!){RESET}"
     )
 

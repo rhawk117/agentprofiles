@@ -61,7 +61,9 @@ In the context bar, the yellow `·` marks where auto-compaction triggers and the
 (!) CACHE_WRITE 200k · ~$2.00 if 1h TTL (!)
 ```
 
-Red and bold, deliberately not blinking — the line repaints every five seconds, which turns a blink attribute into flicker. `CLAUDE_STATUS_NO_ALERT=1` suppresses it.
+Red and bold, and it flashes: the underline toggles on alternate seconds. That is done with SGR 4 rather than the blink attribute SGR 5, which Windows Terminal ignores and which no terminal implements for SGR 6. `CLAUDE_STATUS_NO_ALERT=1` suppresses the banner.
+
+The flash depends on `statusLine.refreshInterval` in `settings.json`. Updates are otherwise event-driven, so without a timer the banner would freeze mid-phase whenever the session went idle — which is exactly when it needs to be noticed. The interval must also be an **odd** number of seconds, or every idle repaint lands on the same phase and the underline never changes. It is currently `5`; a smoke assertion holds it odd. Set it to `1` for a brisk one-hertz pulse at the cost of running the script five times as often.
 
 Nothing keys off `exceeds_200k_tokens`. Claude Code reports it as a fixed threshold with no billing meaning, and Claude 4.6 and later carry the full 1M-token window at standard rates, so there is no long-context premium to warn about. An earlier version of this statusline claimed otherwise.
 
