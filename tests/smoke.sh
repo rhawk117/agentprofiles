@@ -84,22 +84,54 @@ assert_lacks "no effort badge without effort field" \
 assert_lacks "no thinking glyph without thinking field" "$out" "✻"
 assert_lacks "burn rate suppressed under a minute" "$out" "/hr"
 
-long="$TMP/long.json"
-python3 -c "
-import json,sys
+# The cache-write alert. Opus 5 writes cost $6.25/MTok at a 5m TTL and $10 at 1h;
+# ~$/msg prices the cheaper one because the payload does not say which was used.
+# The alert fires once that gap clears $0.10, i.e. past ~27k cache-creation tokens.
+cache_payload() {
+  python3 -c "
+import json
 d=json.load(open('$FIXTURES/statusline-full.json'))
-d['exceeds_200k_tokens']=True
-json.dump(d,open('$long','w'))
+d['context_window']['current_usage']['cache_creation_input_tokens']=$1
+json.dump(d,open('$2','w'))
 "
-out="$(statusline <"$long")"
-assert_has "long-context alert renders" "$out" "LONG_CONTEXT"
+}
+
+# 200k x ($10 - $6.25) / 1e6 = $0.75 gap, well clear of the threshold.
+big="$TMP/cache-big.json"
+cache_payload 200000 "$big"
+out="$(statusline <"$big")"
+assert_has "cache-write alert renders" "$out" "CACHE_WRITE"
+assert_has "alert reports the written volume" "$(NO_COLOR=1 statusline <"$big")" "CACHE_WRITE 200k"
+# 200k at the 1h rate of $10/MTok is $2.00, the figure ~$/msg is not charging for.
+assert_has "alert prices them at the 1h rate" "$(NO_COLOR=1 statusline <"$big")" '~$2.00 if 1h TTL'
 assert_eq "alert adds a fourth line" "$(printf '%s\n' "$out" | wc -l)" "4"
 # Deliberately steady, not blinking: the statusline repaints every 5s, so a blink
 # attribute compounds into flicker. Pinned so the choice cannot drift unnoticed.
 assert_lacks "alert does not blink" "$out" "$(printf '\033[5m')"
 assert_has "alert is red and bold instead" "$out" "$(printf '\033[91m\033[1m')"
-out="$(CLAUDE_STATUS_NO_ALERT=1 statusline <"$long")"
-assert_lacks "alert suppressed by CLAUDE_STATUS_NO_ALERT" "$out" "LONG_CONTEXT"
+out="$(CLAUDE_STATUS_NO_ALERT=1 statusline <"$big")"
+assert_lacks "alert suppressed by CLAUDE_STATUS_NO_ALERT" "$out" "CACHE_WRITE"
+
+# 20k x $3.75 / 1e6 = $0.075, under the threshold: not worth a line of screen.
+small="$TMP/cache-small.json"
+cache_payload 20000 "$small"
+assert_lacks "no alert when the TTL gap is trivial" "$(statusline <"$small")" "CACHE_WRITE"
+# Unpriced models have no cache_write_1h to compare against.
+assert_lacks "no alert without a rate entry" \
+  "$(statusline <"$FIXTURES/statusline-unknown-model.json")" "CACHE_WRITE"
+
+# exceeds_200k_tokens is a fixed threshold with no billing meaning: Claude 4.6 and
+# later carry the full 1M window at standard rates. Nothing may key an alert on it.
+over="$TMP/over-200k.json"
+python3 -c "
+import json
+d=json.load(open('$FIXTURES/statusline-full.json'))
+d['exceeds_200k_tokens']=True
+json.dump(d,open('$over','w'))
+"
+out="$(statusline <"$over")"
+assert_eq "crossing 200k alone adds no line" "$(printf '%s\n' "$out" | wc -l)" "3"
+assert_lacks "no premium-rate claim anywhere" "$out" "premium"
 
 # fast_mode carries no glyph by design, but must still reprice input/output.
 fast="$TMP/fast.json"

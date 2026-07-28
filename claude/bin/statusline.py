@@ -17,6 +17,7 @@ CACHE_DIR = (
 PER_MILLION = 1_000_000
 MS_PER_HOUR = 3_600_000
 BURN_MIN_MS = 60_000  # below a minute the $/hr figure is noise
+CACHE_TTL_ALERT_USD = 0.10  # below this the 5m-vs-1h ambiguity is not worth a line
 
 _NC = os.environ.get("NO_COLOR") is not None
 
@@ -186,6 +187,28 @@ def context_cost(usage: dict, rates: dict, fast: bool) -> float:
     )
     total = sum(as_int(usage.get(key)) * as_float(rate) for key, rate in priced)
     return total / PER_MILLION
+
+
+def cache_write_alert(usage: dict, rates: dict) -> str:
+    """Cache writes bill at 1.25x base input for a 5m TTL and 2x for 1h, but the
+    payload reports one undifferentiated token count. context_cost() prices the
+    cheaper of the two, so say so once the gap between them is worth knowing.
+
+    This replaced an alert keyed on exceeds_200k_tokens. That flag is a fixed
+    threshold with no billing meaning: Claude 4.6 and later carry the full 1M
+    window at standard rates, so the premium it warned about does not exist.
+    """
+    cheap = as_float(rates.get("cache_write"))
+    dear = as_float(rates.get("cache_write_1h"))
+    written = as_int(usage.get("cache_creation_input_tokens"))
+    if not written or dear <= cheap:
+        return ""
+    if written * (dear - cheap) / PER_MILLION < CACHE_TTL_ALERT_USD:
+        return ""
+    return (
+        f"{RED}{BOLD}(!) CACHE_WRITE {human(written)} · "
+        f"~${written * dear / PER_MILLION:.2f} if 1h TTL (!){RESET}"
+    )
 
 
 def hash_bar(pct: int, width: int) -> str:
@@ -618,10 +641,10 @@ def main() -> int:
     line3 = SEP.join(spend)
 
     lines = [line1, line2, line3]
-    if dig(data, "exceeds_200k_tokens", default=False) and (
-        os.environ.get("CLAUDE_STATUS_NO_ALERT") != "1"
-    ):
-        lines.insert(1, f"{RED}{BOLD}(!) LONG_CONTEXT · premium input rate (!){RESET}")
+    if os.environ.get("CLAUDE_STATUS_NO_ALERT") != "1":
+        alert = cache_write_alert(usage, rates)
+        if alert:
+            lines.insert(1, alert)
 
     # A session with no rate limits and nothing spent yet has no third line;
     # printing it blank would leave a gap under the statusline.

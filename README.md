@@ -55,11 +55,19 @@ The glyph and colour on the model name come from `claude/model-rates.json`, whic
 
 In the context bar, the yellow `·` marks where auto-compaction triggers and the dots past it are window the session never reaches, since compaction fires first. The activity glyphs match the Copilot statusline: `⟳` turns, `⌕` tools, `⌬` agents, `✕` errors.
 
-The long-context banner is red and bold but deliberately does not blink — the line repaints every five seconds, which turns a blink attribute into flicker. A smoke assertion pins that so it cannot drift.
+`~$/msg` is a **lower bound**. Cache writes bill at 1.25× base input for a five-minute TTL and 2× for an hour, and the statusline payload reports a single `cache_creation_input_tokens` count that does not say which was used. The figure prices the cheaper one. When the gap between the two clears ten cents, a banner appears saying what those writes cost at the hourly rate:
+
+```
+(!) CACHE_WRITE 200k · ~$2.00 if 1h TTL (!)
+```
+
+Red and bold, deliberately not blinking — the line repaints every five seconds, which turns a blink attribute into flicker. `CLAUDE_STATUS_NO_ALERT=1` suppresses it.
+
+Nothing keys off `exceeds_200k_tokens`. Claude Code reports it as a fixed threshold with no billing meaning, and Claude 4.6 and later carry the full 1M-token window at standard rates, so there is no long-context premium to warn about. An earlier version of this statusline claimed otherwise.
 
 Rate limit windows are recorded to `~/.cache/claude-statusline/rate-limits.json` and replayed, because Claude Code only includes them in some payloads. A recorded window is discarded once its reset time passes.
 
-Two environment variables adjust it: `NO_COLOR=1` strips escape sequences, and `CLAUDE_STATUS_NO_ALERT=1` suppresses the long-context banner.
+Two environment variables adjust it: `NO_COLOR=1` strips escape sequences, and `CLAUDE_STATUS_NO_ALERT=1` suppresses the cache-write banner.
 
 ## Tests
 
