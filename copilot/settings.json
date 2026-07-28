@@ -90,9 +90,7 @@
   },
   "disabledSkills": [],
   "disabledMcpServers": [],
-  "allowedUrls": [
-    // ...redacted ;)
-  ],
+  "allowedUrls": [],
   "deniedUrls": [],
   "extraKnownMarketplaces": {
     "anthropic-agent-skills": {

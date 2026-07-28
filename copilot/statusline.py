@@ -96,14 +96,14 @@ def dig(obj: object, *path: str, default: object = None) -> object:
 def as_int(value: object, default: int = 0) -> int:
     try:
         return int(float(value))
-    except TypeError, ValueError:
+    except (TypeError, ValueError):
         return default
 
 
 def as_float(value: object, default: float = 0.0) -> float:
     try:
         return float(value)
-    except TypeError, ValueError:
+    except (TypeError, ValueError):
         return default
 
 
@@ -240,7 +240,7 @@ def long_context_alert(used_pct: int, request_multiplier: float | None) -> str:
         return ""
     try:
         multiplier = float(request_multiplier)
-    except TypeError, ValueError:
+    except (TypeError, ValueError):
         return ""
     if not math.isfinite(multiplier) or multiplier < 2:
         return ""
@@ -252,7 +252,7 @@ def load_json_file(path: Path) -> Json:
     try:
         with path.open(encoding="utf-8") as handle:
             parsed = json.load(handle)
-    except OSError, ValueError:
+    except (OSError, ValueError):
         return {}
     if not isinstance(parsed, dict):
         return {}
@@ -291,7 +291,7 @@ def record_peak(session_id: str, pct: float) -> None:
     try:
         state_dir().mkdir(parents=True, exist_ok=True)
         previous = float(path.read_text(encoding="utf-8").strip())
-    except OSError, ValueError:
+    except (OSError, ValueError):
         previous = 0.0
     if pct <= previous:
         return
@@ -352,7 +352,7 @@ def _row_value(row: object, key: str) -> object:
         return row.get(key)
     try:
         return row[key]  # type: ignore[index]
-    except IndexError, KeyError, TypeError:
+    except (IndexError, KeyError, TypeError):
         return None
 
 
@@ -405,7 +405,7 @@ def session_aic(session_id: str) -> tuple[float | None, float | None]:
                 """,
                 (session_id, session_id),
             ).fetchone()[0]
-    except OSError, sqlite3.Error:
+    except (OSError, sqlite3.Error):
         return None, None
     return (
         _recorded_aic_value(effective, nano=True),
@@ -428,7 +428,7 @@ def session_uncached_aic(session_id: str) -> float | None:
                 """,
                 (session_id,),
             ).fetchall()
-    except OSError, sqlite3.Error:
+    except (OSError, sqlite3.Error):
         return None
     rates = load_json_file(copilot_home() / "model-rates.json")
     return uncached_aic_from_rows(rows, rates)
@@ -448,7 +448,7 @@ def session_turn_count(session_id: str) -> int | None:
                 """,
                 (session_id,),
             ).fetchone()[0]
-    except OSError, sqlite3.Error:
+    except (OSError, sqlite3.Error):
         return None
     return as_int(count) if count is not None else None
 
@@ -471,7 +471,7 @@ def git_state(cwd: str, session_id: str) -> Json:
             cached = json.loads(cache.read_text(encoding="utf-8"))
             if isinstance(cached, dict):
                 return cached
-    except OSError, ValueError:
+    except (OSError, ValueError):
         pass
     try:
         out = subprocess.run(
@@ -481,7 +481,7 @@ def git_state(cwd: str, session_id: str) -> Json:
             text=True,
             timeout=3,
         )
-    except OSError, subprocess.SubprocessError:
+    except (OSError, subprocess.SubprocessError):
         return state
     if out.returncode == 0:
         for line in out.stdout.splitlines():
@@ -621,7 +621,7 @@ def duration_segment(ms: int) -> str:
 def main() -> int:
     try:
         data = json.load(sys.stdin)
-    except ValueError, OSError:
+    except (ValueError, OSError):
         print(f"{GRAY}statusline: bad input{RESET}")
         return 0
     if not isinstance(data, dict):

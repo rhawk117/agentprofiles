@@ -26,7 +26,7 @@ def state_dir() -> Path:
 def read_payload() -> Json:
     try:
         parsed = json.loads(sys.stdin.read() or "{}")
-    except ValueError, OSError:
+    except (ValueError, OSError):
         return {}
     return parsed if isinstance(parsed, dict) else {}
 
@@ -44,7 +44,7 @@ def git(cwd: str, *args: str) -> str:
         out = subprocess.run(
             ["git", *args], cwd=cwd, capture_output=True, text=True, timeout=2
         )
-    except OSError, subprocess.SubprocessError:
+    except (OSError, subprocess.SubprocessError):
         return ""
     return out.stdout.strip() if out.returncode == 0 else ""
 
