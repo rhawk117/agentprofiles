@@ -2,27 +2,24 @@
 import json
 import math
 import os
-import sqlite3
+import re
 import subprocess
 import sys
 import time
-from contextlib import closing
 from pathlib import Path
 
 type Json = dict[str, object]
 
-FILL = "\u2501"
-VOID = "\u2501" if os.environ.get("NO_COLOR") is None else "\u2500"
 CTX_W = 14
 LIM_W = 6
-AIC_W = 6
 
 GIT_CACHE_TTL = int(os.environ.get("COPILOT_STATUS_GIT_CACHE_SECONDS", "5"))
 DEFAULT_COMPACT_PCT = 80.0
-CREDITS_PER_USD = 100.0
-AIC_WARN = float(os.environ.get("COPILOT_AIC_WARN", "500"))
-AIC_ALARM = float(os.environ.get("COPILOT_AIC_ALARM", "1500"))
 NANO_AIU_PER_AIC = 1_000_000_000
+PER_MILLION = 1_000_000
+MS_PER_HOUR = 3_600_000
+BURN_MIN_MS = 60_000  # below a minute the $/hr figure is noise
+CACHE_TTL_ALERT_USD = 0.10  # below this the 5m-vs-1h ambiguity is not worth a line
 
 _NC = os.environ.get("NO_COLOR") is not None
 
@@ -43,7 +40,6 @@ ORANGE = _c("\033[38;5;208m")
 DIM = _c("\033[2m")
 ITALIC = _c("\033[3m")
 UNDERLINE = _c("\033[4m")
-BLINK = _c("\033[5m")
 SEP = f"{GRAY}   {RESET}"
 
 VENDOR_COLORS = {
@@ -120,21 +116,6 @@ def pct_color(pct: int) -> str:
     if pct < 80:
         return YELLOW
     return RED
-
-
-def aic_color(credits: float) -> str:
-    if credits < AIC_WARN:
-        return GREEN
-    if credits < AIC_ALARM:
-        return YELLOW
-    return RED
-
-
-def bar(pct: int, width: int, color: str | None = None) -> str:
-    pct = max(0, min(100, pct))
-    filled = min(width, pct * width // 100)
-    shade = color if color is not None else pct_color(pct)
-    return f"{shade}{FILL * filled}{GRAY}{VOID * (width - filled)}{RESET}"
 
 
 def context_segment(used_pct: int, tokens: int, limit: int, compact_pct: float) -> str:
@@ -231,21 +212,79 @@ def model_segment(model_id: str, metadata: Json | None, reasoning: str = "") -> 
     return " ".join(parts)
 
 
-def _format_multiplier(value: float) -> str:
-    return str(int(value)) if value.is_integer() else f"{value:g}"
+def context_cost(window: object, rates: Json) -> float:
+    """Dollars for the whole session, each token class at its own rate.
+
+    Priced per class rather than against one blended rate: cache reads bill an
+    order of magnitude below fresh input, so a single rate overstates a
+    well-cached session badly. `total_reasoning_tokens` is assumed to be already
+    inside `total_output_tokens` and is not added -- unverified, but if it is
+    wrong the figure comes out low, which is the safe direction.
+    """
+    if not rates:
+        return 0.0
+    priced = (
+        ("total_input_tokens", rates.get("input")),
+        ("total_output_tokens", rates.get("output")),
+        ("total_cache_read_tokens", rates.get("cache_read")),
+        ("total_cache_write_tokens", rates.get("cache_write")),
+    )
+    total = sum(as_int(dig(window, key)) * as_float(rate) for key, rate in priced)
+    return total / PER_MILLION
 
 
-def long_context_alert(used_pct: int, request_multiplier: float | None) -> str:
-    if request_multiplier is None or used_pct < 80:
+def message_cost(window: object, rates: Json) -> float:
+    """Lower bound on one more turn: the cost of resending the context.
+
+    From `last_call_input_tokens`, not `total_input_tokens` -- the latter is a
+    running sum that grows without bound, so dividing it by anything inflates
+    the figure as the session goes on. The reply's output tokens are not
+    knowable in advance and are left out.
+    """
+    if not rates:
+        return 0.0
+    tokens = as_int(dig(window, "last_call_input_tokens"))
+    return tokens * as_float(rates.get("input")) / PER_MILLION
+
+
+def cache_hit_ratio(window: object) -> float | None:
+    """Share of prompt tokens served from cache, the main efficiency lever."""
+    fresh = as_int(dig(window, "total_input_tokens"))
+    cached = as_int(dig(window, "total_cache_read_tokens"))
+    total = fresh + cached
+    return cached / total if total > 0 else None
+
+
+def pulse(now: float) -> str:
+    """Underline that alternates once a second, so the alert flashes instead of
+    sitting there. Phase comes off the wall clock rather than a stored counter,
+    which keeps it a steady square wave however irregularly the line repaints --
+    and with refreshInterval at an odd number of seconds it also flips on every
+    idle repaint rather than aliasing to one phase. SGR 4 rather than SGR 5:
+    Windows Terminal ignores blink.
+    """
+    return UNDERLINE if int(now) % 2 else ""
+
+
+def cache_write_alert(window: object, rates: Json) -> str:
+    """Cache writes bill at one rate for a 5m TTL and a higher one for 1h, but
+    the payload reports a single undifferentiated count. context_cost() prices
+    the cheaper of the two, so say so once the gap is worth knowing. Silent for
+    every non-Anthropic model, which does not bill cache writes at all.
+    """
+    if os.environ.get("COPILOT_STATUS_NO_ALERT") == "1":
         return ""
-    try:
-        multiplier = float(request_multiplier)
-    except (TypeError, ValueError):
+    cheap = as_float(rates.get("cache_write"))
+    dear = as_float(rates.get("cache_write_1h"))
+    written = as_int(dig(window, "total_cache_write_tokens"))
+    if not written or dear <= cheap:
         return ""
-    if not math.isfinite(multiplier) or multiplier < 2:
+    if written * (dear - cheap) / PER_MILLION < CACHE_TTL_ALERT_USD:
         return ""
-    factor = _format_multiplier(multiplier)
-    return f"{RED}{BLINK}(!) LONG_CONTEXT [x{factor} cost] (!){RESET}"
+    return (
+        f"{pulse(time.time())}{RED}{BOLD}(!) CACHE_WRITE {human(written)} · "
+        f"~${written * dear / PER_MILLION:.2f} if 1h TTL (!){RESET}"
+    )
 
 
 def load_json_file(path: Path) -> Json:
@@ -322,135 +361,37 @@ def _recorded_aic_value(value: object, *, nano: bool) -> float | None:
     return parsed / NANO_AIU_PER_AIC if nano else parsed
 
 
-def _first_recorded_aic(root: object, paths: tuple[tuple[tuple[str, ...], bool], ...]):
-    for path, nano in paths:
-        value = _recorded_aic_value(dig(root, *path), nano=nano)
-        if value is not None:
-            return value
-    return None
+def _aic_from_formatted(value: object) -> float | None:
+    """`ai_used.formatted` is a display string of unspecified shape, so take the
+    first number out of it and let the caller fall through to the numeric field
+    when there is not one."""
+    if not isinstance(value, str):
+        return None
+    match = re.search(r"-?\d+(?:\.\d+)?", value.replace(",", ""))
+    if match is None:
+        return None
+    parsed = as_float(match.group(), float("nan"))
+    return parsed if math.isfinite(parsed) else None
 
 
 def authoritative_aic(data: Json, window: object) -> float | None:
-    cumulative_paths = (
-        (("cost", "total_nano_aiu"), True),
-        (("cost", "cumulative_nano_aiu"), True),
-        (("cost", "total_aic"), False),
-        (("cost", "cumulative_aic"), False),
-        (("total_nano_aiu",), True),
-        (("cumulative_nano_aiu",), True),
-        (("total_aic",), False),
-        (("cumulative_aic",), False),
-    )
-    cumulative = _first_recorded_aic(data, cumulative_paths)
-    if cumulative is None:
-        cumulative = _first_recorded_aic(window, cumulative_paths)
-    return cumulative
+    """Session credits as Copilot itself counts them, which beats our own
+    arithmetic when the two disagree.
 
-
-def _row_value(row: object, key: str) -> object:
-    if isinstance(row, dict):
-        return row.get(key)
-    try:
-        return row[key]  # type: ignore[index]
-    except (IndexError, KeyError, TypeError):
-        return None
-
-
-def uncached_aic_from_rows(rows: object, rates: Json) -> float | None:
-    total = 0.0
-    found_rows = False
-    for row in rows:  # type: ignore[union-attr]
-        found_rows = True
-        metadata = model_metadata(str(_row_value(row, "model")), rates)
-        if metadata is None:
-            return None
-        input_rate = as_float(metadata.get("input"), -1.0)
-        output_rate = as_float(metadata.get("output"), -1.0)
-        if input_rate < 0 or output_rate < 0:
-            return None
-        input_tokens = as_float(_row_value(row, "input_tokens"))
-        output_tokens = as_float(_row_value(row, "output_tokens"))
-        total += (
-            (input_tokens * input_rate + output_tokens * output_rate)
-            / 1_000_000.0
-            * CREDITS_PER_USD
-        )
-    return total if found_rows else None
-
-
-def session_aic(session_id: str) -> tuple[float | None, float | None]:
-    database = copilot_home() / "session-store.db"
-    if not database.is_file() or session_id == "default":
-        return None, None
-    try:
-        with closing(sqlite3.connect(database, timeout=0.1)) as connection:
-            cumulative = connection.execute(
-                """
-                SELECT SUM(total_nano_aiu)
-                FROM assistant_usage_events
-                WHERE session_id = ?
-                """,
-                (session_id,),
-            ).fetchone()[0]
-            effective = connection.execute(
-                """
-                SELECT SUM(total_nano_aiu)
-                FROM assistant_usage_events
-                WHERE session_id = ?
-                  AND turn_index = (
-                      SELECT MAX(turn_index)
-                      FROM assistant_usage_events
-                      WHERE session_id = ?
-                  )
-                """,
-                (session_id, session_id),
-            ).fetchone()[0]
-    except (OSError, sqlite3.Error):
-        return None, None
-    return (
-        _recorded_aic_value(effective, nano=True),
-        _recorded_aic_value(cumulative, nano=True),
-    )
-
-
-def session_uncached_aic(session_id: str) -> float | None:
-    database = copilot_home() / "session-store.db"
-    if not database.is_file() or session_id == "default":
-        return None
-    try:
-        with closing(sqlite3.connect(database, timeout=0.1)) as connection:
-            connection.row_factory = sqlite3.Row
-            rows = connection.execute(
-                """
-                SELECT model, input_tokens, output_tokens
-                FROM assistant_usage_events
-                WHERE session_id = ?
-                """,
-                (session_id,),
-            ).fetchall()
-    except (OSError, sqlite3.Error):
-        return None
-    rates = load_json_file(copilot_home() / "model-rates.json")
-    return uncached_aic_from_rows(rows, rates)
-
-
-def session_turn_count(session_id: str) -> int | None:
-    database = copilot_home() / "session-store.db"
-    if not database.is_file() or session_id == "default":
-        return None
-    try:
-        with closing(sqlite3.connect(database, timeout=0.1)) as connection:
-            count = connection.execute(
-                """
-                SELECT COUNT(*)
-                FROM turns
-                WHERE session_id = ?
-                """,
-                (session_id,),
-            ).fetchone()[0]
-    except (OSError, sqlite3.Error):
-        return None
-    return as_int(count) if count is not None else None
+    Only two fields carry this: `ai_used.formatted` and `total_nano_aiu`. Their
+    nesting is not documented, so both the payload root and the context window
+    are probed. Everything else the previous version looked for was invented,
+    including a session-store.db table that appears in no published schema.
+    """
+    for root in (data, window):
+        credits = _aic_from_formatted(dig(root, "ai_used", "formatted"))
+        if credits is not None:
+            return credits
+        for path in (("ai_used", "total_nano_aiu"), ("total_nano_aiu",)):
+            nano = _recorded_aic_value(dig(root, *path), nano=True)
+            if nano is not None:
+                return nano
+    return None
 
 
 def git_state(cwd: str, session_id: str) -> Json:
@@ -671,24 +612,8 @@ def main() -> int:
             default=dig(window, "context_window_size"),
         )
     )
-    raw_multiplier = dig(
-        data,
-        "request_multiplier",
-        default=dig(
-            data,
-            "cost",
-            "request_multiplier",
-            default=dig(data, "usage", "request_multiplier"),
-        ),
-    )
-    request_multiplier = (
-        None if raw_multiplier is None else as_float(raw_multiplier, float("nan"))
-    )
 
     state = counters(session_id)
-    recorded_turns = session_turn_count(session_id)
-    if recorded_turns is not None:
-        state = {**state, "turns": recorded_turns}
     record_peak(session_id, as_float(dig(window, "current_context_used_percentage")))
     threshold = compact_threshold(state)
 
@@ -697,42 +622,47 @@ def main() -> int:
     if version:
         line1 += f"{SEP}{GRAY}v{version}{RESET}"
 
-    alert = long_context_alert(used_pct, request_multiplier)
-    line2 = f"{alert}{SEP}" if alert else ""
-    line2 += f"{SEP}{context_segment(used_pct, tokens, limit, threshold)}"
+    line2 = context_segment(used_pct, tokens, limit, threshold)
+    line2 += f"{SEP}{activity_segment(state)}"
 
-    recorded_aic = authoritative_aic(data, window)
-    if recorded_aic is None:
-        db_effective, db_cumulative = session_aic(session_id)
-        recorded_aic = db_cumulative
-    uncached_aic = session_uncached_aic(session_id)
-    if recorded_aic is None:
-        spent = as_int(dig(window, "total_input_tokens")) + as_int(
+    # Line 3 is what the session has spent. There is no budget gauge: the plan
+    # here is enterprise with no usage cap, so a percentage-of-quota bar would
+    # be measuring against nothing. Absolute figures instead.
+    rates = metadata or {}
+    session_usd = context_cost(window, rates)
+    credits = authoritative_aic(data, window)
+    duration_ms = as_int(dig(data, "cost", "total_duration_ms"))
+
+    spend = []
+    alert = cache_write_alert(window, rates)
+    if alert:
+        spend.append(alert)
+    if session_usd > 0:
+        spend.append(f"{BOLD}${session_usd:.2f}{RESET}")
+    elif not rates:
+        billed = as_int(dig(window, "total_input_tokens")) + as_int(
             dig(window, "total_output_tokens")
         )
-        if spent > 0:
-            line2 += f"{SEP}{GRAY}aic{RESET} {GRAY}{human(spent)} tok, no rate{RESET}"
-    else:
-        shade = aic_color(recorded_aic)
-        gauge = min(100, int(recorded_aic * 100 / AIC_ALARM)) if AIC_ALARM > 0 else 0
-        ratio = (
-            f"{recorded_aic:.0f}:{uncached_aic:.0f}"
-            if uncached_aic is not None
-            else f"{recorded_aic:.0f}"
-        )
-        line2 += (
-            f"{SEP}{GRAY}aic{RESET} {bar(gauge, AIC_W, shade)} "
-            f"{shade}{ratio}{RESET} "
-            f"{GRAY}~${recorded_aic / CREDITS_PER_USD:.2f}{RESET}"
-        )
-
-    line2 += f"{SEP}{activity_segment(state)}"
-    elapsed = duration_segment(as_int(dig(data, "cost", "total_duration_ms")))
+        if billed > 0:
+            spend.append(f"{GRAY}{human(billed)} tok, no rate{RESET}")
+    if credits is not None:
+        spend.append(f"{GRAY}{credits:.0f} aic{RESET}")
+    per_message = message_cost(window, rates)
+    if per_message > 0:
+        spend.append(f"{GRAY}~${per_message:.2f}/msg{RESET}")
+    if session_usd > 0 and duration_ms >= BURN_MIN_MS:
+        spend.append(f"{GRAY}${session_usd * MS_PER_HOUR / duration_ms:.2f}/hr{RESET}")
+    hit_ratio = cache_hit_ratio(window)
+    if hit_ratio is not None:
+        spend.append(f"{GRAY}cache {hit_ratio:.0%}{RESET}")
+    elapsed = duration_segment(duration_ms)
     if elapsed:
-        line2 += f"{SEP}{elapsed}"
+        spend.append(elapsed)
 
     print(line1)
     print(line2)
+    if spend:
+        print(SEP.join(spend))
     return 0
 
 
