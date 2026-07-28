@@ -6,22 +6,24 @@ Agent harness configuration for two tools, kept in one place so it can be versio
 - `copilot/` — the equivalent for GitHub Copilot CLI
 - `ideas/` — experiments, not installed by anything
 
-Only the Claude side has an installer today.
-
-## Installing the Claude config
+## Installing
 
 ```sh
 ./install.sh
 ```
 
-This runs the smoke suite first and refuses to touch anything if it fails. Then it backs up whatever it is about to replace and symlinks the repo's `claude/` tree onto `~/.claude`. Because they are symlinks, editing a file here takes effect immediately — there is no second step.
+This runs the smoke suite first and refuses to touch anything if it fails. Then it backs up whatever it is about to replace and symlinks both trees onto their config directories — `claude/` onto `~/.claude`, `copilot/` onto `~/.copilot`. Because they are symlinks, editing a file here takes effect immediately — there is no second step.
 
 ```sh
-./install.sh --check        # audit what is linked, without writing
-./install.sh --skip-tests   # install without running the smoke suite
+./install.sh --tree claude      # one tree only (also: copilot, all)
+./install.sh --check            # audit what is linked, without writing
+./install.sh --print-manifest   # list the managed paths and exit
+./install.sh --skip-tests       # install without running the smoke suite
 ```
 
-Set `CLAUDE_HOME` to install somewhere other than `~/.claude`, which is how the installer is tested.
+`--tree` also narrows the smoke gate, so a failure on one side cannot block installing the other.
+
+Set `CLAUDE_HOME` or `COPILOT_HOME` to install somewhere other than the defaults, which is how the installer is tested.
 
 ### What it links
 
@@ -29,7 +31,9 @@ Set `CLAUDE_HOME` to install somewhere other than `~/.claude`, which is how the 
 
 That distinction matters. Linking the directories would hide anything that exists only in `~/.claude` — skills installed by a plugin marketplace, agents added by hand. Per-entry linking installs what the repo carries and leaves the rest alone. Where both sides have a file of the same name, the repo version wins and the previous one goes into the backup.
 
-Backups land in `~/.claude/backups/agentprofiles-<timestamp>/`, laid out the same way as `~/.claude` itself. To undo something, delete the symlink and copy the file back.
+On the Copilot side the same rule applies to `hooks/`, `hooks/bin/`, `skills/`, and `agents/`, with `settings.json`, `model-rates.json`, and `statusline.py` linked directly. Those four directories are named exactly and the config-directory root is never enumerated: `~/.copilot` is a live product directory holding `session-store.db`, `session-state/`, and `logs/`, none of which the installer may go near. `copilot/copilot-instructions.md` is deliberately unmanaged while it is empty, since linking it over a real one would blank your instructions.
+
+Backups land in `<config dir>/backups/agentprofiles-<timestamp>/`, laid out the same way as the config directory itself. To undo something, delete the symlink and copy the file back.
 
 ### Retired hooks
 
@@ -71,10 +75,56 @@ Rate limit windows are recorded to `~/.cache/claude-statusline/rate-limits.json`
 
 Two environment variables adjust it: `NO_COLOR=1` strips escape sequences, and `CLAUDE_STATUS_NO_ALERT=1` suppresses the cache-write banner.
 
+## Copilot statusline
+
+`copilot/statusline.py` renders the same three lines against Copilot's payload:
+
+```
+★ (gpt-5.6-luna) [high]  ·  agentprofiles  ·  main ~1 ?1  ·  v0.0.42
+◉ [#####----] 41%  ◌ 82k/200k  ·  ⌕ tools(47) ◦ ⟳ turns(12) ◦ ✕ errors(0) ◦ ⌬ agents(2)
+$0.69  ·  31 aic  ·  ~$0.14/msg  ·  $3.45/hr  ·  cache 83%  ·  12:00
+```
+
+There is no quota gauge. The plan this was written for is enterprise with no usage cap, so a percentage-of-quota bar would be measuring against nothing; line three carries absolute figures instead.
+
+Two numbers, because they come from different places. The dollar figure is our own arithmetic over the payload's cumulative token counters priced through `copilot/model-rates.json`. The `aic` figure is GitHub's own, read from `ai_used` — one AI credit is one US cent. When the two disagree, GitHub's is the one that gets billed.
+
+`~$/msg` is a **lower bound**, as on the Claude side. It prices resending the current context once, from `last_call_input_tokens` — not the cumulative `total_input_tokens`, which grows all session and would inflate the figure without bound. It charges nothing for the output the turn will produce, and nothing for the cache writes it may trigger. The cache-write banner and its alternating underline work exactly as described above, suppressed by `COPILOT_STATUS_NO_ALERT=1`. Only the Anthropic models bill cache writes at all, so on a GPT or Gemini model it never fires.
+
+An unpriced model prints its token volume and says so rather than inventing a rate:
+
+```
+125k tok, no rate  ·  cache 0%
+```
+
+Billing is priced from the statusline payload alone. `~/.copilot/session-store.db` does hold cost data, but GitHub publishes no schema for it, marks the file automatically managed, and warns that it changes between releases — so nothing here reads it.
+
+The two rate tables key differently on purpose: `claude/model-rates.json` uses API model IDs (`claude-opus-4-8`), `copilot/model-rates.json` uses Copilot's display names (`claude-opus-4.8`). Only the schema is shared. Their `q_score` columns come from different scales and are not comparable across the two files.
+
+## Copilot hooks
+
+Ported from the Claude side, adapted to Copilot's contract:
+
+| Event | Script | What it does |
+|---|---|---|
+| `preToolUse` | `protected_paths_guard.sh` | denies credential paths, asks about environment dumps and curl-pipe-shell |
+| `sessionStart` + `userPromptTransformed` | `session_context.py` | captures repo state, injects it into the first prompt |
+| `postToolUse` | `read_logger.py` | records what was read |
+| `notification` | `notify.sh` | desktop notification, terminal bell as fallback |
+
+Two contract differences from Claude are load-bearing. Copilot's verdict is flat — `{"permissionDecision": ..., "permissionDecisionReason": ...}` — with no `hookSpecificOutput` wrapper. And `preToolUse` treats a **non-zero exit as a deny** regardless of what stdout said, so the guard exits 0 on every path including when it fails closed; a guard that ever crashed would block every tool call for the rest of the session.
+
+The credential deny list lives inside the guard rather than in `settings.json`. Claude expresses it as 25 `permissions.deny` entries; Copilot's `permissions` object supports only `disableBypassPermissionsMode`, so the guard has to see every tool call. That is roughly one extra process spawn per tool.
+
+`ruff_on_edit.py` is not ported. `ideas/tool-filter.py` is a sketch, not an installed hook.
+
 ## Tests
 
 ```sh
-bash tests/smoke.sh
+bash tests/smoke.sh                  # both trees
+SMOKE_TREE=copilot bash tests/smoke.sh
 ```
 
-Covers statusline rendering against JSON fixtures, each of the five hooks, and whether every path `settings.json` references actually exists and is executable. No dependencies beyond `python3` and `git`.
+Covers statusline rendering against JSON fixtures, every hook, cost arithmetic against hand-computed figures, and whether every path the configs reference exists and is executable. No dependencies beyond `python3` and `git`.
+
+**The Copilot fixtures are hand-authored from GitHub's documentation, not captured from a live CLI**, and each says so in a `_source` key. Copilot was not installed on the machine this was written on, so nothing here has been observed executing. If a payload key name turns out to be wrong, every assertion still passes while the real hook silently does nothing. Capturing one live payload per event is the only thing that closes that gap.
