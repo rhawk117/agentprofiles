@@ -44,12 +44,16 @@ The installer removes four hooks from `~/.claude/hooks/` — `notify.sh`, `prote
 `claude/bin/statusline.py` renders three lines:
 
 ```
-★ Opus [high] ✻  ·  agentprofiles  ·  main ~1 ?1
-◉ [#####----·----] 41%  ◌ 82k/200k  58k left  ·  5h [#-------] 22% 8:53pm
-turns 12  ·  tools 47  ·  +156/-23  ·  $0.31  ·  ~$0.14/msg  ·  $1.55/hr  ·  cache 83%  ·  12m
+★ Opus [high] ✻  ·  agentprofiles  ·  main ~1 ?1  ·  v2.1.214
+◉ [#####----·····] 41%  ◌ 82k/200k  58k left  ·  5h [#-------] 22% 8:53pm
+⟳ turns 12  ·  ⌕ tools 47  ·  +156/-23  ·  $0.31  ·  ~$0.14/msg  ·  $1.55/hr  ·  cache 83%  ·  12m
 ```
 
-The glyph and colour on the model name come from `claude/model-rates.json`, which also prices `~$/msg` — what it costs to send the current context once, at the current model's rates. The `·` inside the context bar marks where auto-compaction will trigger.
+The glyph and colour on the model name come from `claude/model-rates.json`, which also prices `~$/msg` — what it costs to send the current context once, at the current model's rates.
+
+In the context bar, the yellow `·` marks where auto-compaction triggers and the dots past it are window the session never reaches, since compaction fires first. The activity glyphs match the Copilot statusline: `⟳` turns, `⌕` tools, `⌬` agents, `✕` errors.
+
+The long-context banner is red and bold but deliberately does not blink — the line repaints every five seconds, which turns a blink attribute into flicker. A smoke assertion pins that so it cannot drift.
 
 Rate limit windows are recorded to `~/.cache/claude-statusline/rate-limits.json` and replayed, because Claude Code only includes them in some payloads. A recorded window is discarded once its reset time passes.
 

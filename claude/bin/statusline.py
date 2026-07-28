@@ -211,21 +211,22 @@ def context_gauge(used_pct: int, tokens: int, window: int, compact_at: int) -> s
     counts = f"{GRAY}◌ {human(tokens)}/{human(window)}{RESET}" if window > 0 else ""
 
     filled = min(CTX_W, used_pct * CTX_W // 100)
-    cells = ["#" if i < filled else "-" for i in range(CTX_W)]
     marker = -1
     if compact_at > 0 and window > 0:
         compact_pct = max(0, min(100, compact_at * 100 // window))
         marker = min(CTX_W - 1, max(0, -(-compact_pct * CTX_W // 100) - 1))
-        cells[marker] = "·"
 
     painted = []
-    for i, cell in enumerate(cells):
-        if i == marker:
-            painted.append(f"{YELLOW}{ITALIC}{cell}{RESET}")
-        elif cell == "#":
-            painted.append(f"{grad_color(used_pct)}{cell}{RESET}")
+    for i in range(CTX_W):
+        if i < filled:
+            painted.append(f"{grad_color(used_pct)}#{RESET}")
+        elif i == marker:
+            painted.append(f"{YELLOW}{ITALIC}·{RESET}")
+        elif i > marker >= 0:
+            # Past the auto-compact trigger: window the session never reaches.
+            painted.append(f"{DIM}{GRAY}·{RESET}")
         else:
-            painted.append(f"{GRAY}{cell}{RESET}")
+            painted.append(f"{GRAY}-{RESET}")
 
     seg = (
         f"{YELLOW}◉{RESET} {GRAY}[{RESET}{''.join(painted)}{GRAY}]{RESET} "
@@ -567,6 +568,8 @@ def main() -> int:
             sync.append(f"↓{git['behind']}")
         if sync:
             line1 += f" {MAGENTA}{''.join(sync)}{RESET}"
+    if version:
+        line1 += f"{SEP}{DIM}{ITALIC}v{version}{RESET}"
 
     # ---- line 2: gauges (context, compact, rate limits) -----------------
     gauges = [context_gauge(used_pct, tokens, window, compact_at)]
@@ -584,17 +587,17 @@ def main() -> int:
 
     # ---- line 3: session activity ---------------------------------------
     act = [
-        f"{GRAY}turns{RESET} {BOLD}{stats['turns']}{RESET}",
-        f"{GRAY}tools{RESET} {BOLD}{stats['tools']}{RESET}",
+        f"{GRAY}⟳ turns{RESET} {BOLD}{stats['turns']}{RESET}",
+        f"{CYAN}⌕ tools{RESET} {BOLD}{stats['tools']}{RESET}",
     ]
     if stats["bash"]:
         act.append(f"{GRAY}sh{RESET} {stats['bash']}")
     if stats["edits"]:
         act.append(f"{GRAY}edits{RESET} {YELLOW}{stats['edits']}{RESET}")
     if stats["agents"]:
-        act.append(f"{GRAY}agents{RESET} {MAGENTA}{BOLD}{stats['agents']}{RESET}")
+        act.append(f"{MAGENTA}⌬ agents{RESET} {MAGENTA}{BOLD}{stats['agents']}{RESET}")
     if stats["errors"]:
-        act.append(f"{GRAY}err{RESET} {RED}{BOLD}{stats['errors']}{RESET}")
+        act.append(f"{RED}✕ err{RESET} {RED}{BOLD}{stats['errors']}{RESET}")
     if added or removed:
         act.append(f"{GREEN}+{added}{RESET}/{RED}-{removed}{RESET}")
     if cost_usd > 0:
@@ -611,8 +614,6 @@ def main() -> int:
         act.append(f"{GRAY}cache{RESET} {grad_color(100 - hit)}{hit}%{RESET}")
     if dur_ms > 0:
         act.append(f"{DIM}{ITALIC}{human_dur(dur_ms)}{RESET}")
-    if version:
-        act.append(f"{DIM}{ITALIC}v{version}{RESET}")
     line3 = SEP.join(act)
 
     lines = [line1, line2, line3]

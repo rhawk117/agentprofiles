@@ -56,6 +56,10 @@ assert_has "per-message cost" "$out" "/msg"
 assert_has "burn rate" "$out" "/hr"
 assert_has "cache hit ratio" "$out" "cache"
 assert_has "session total preserved" "$out" '$0.31'
+assert_has "turns glyph" "$out" "⟳ turns"
+assert_has "tools glyph" "$out" "⌕ tools"
+assert_has "version rides on line 1" "$(printf '%s\n' "$out" | head -1)" "v2.1.214"
+assert_lacks "version is not on line 3" "$(printf '%s\n' "$out" | sed -n 3p)" "v2.1.214"
 # 8500*5 + 1200*25 + 68300*0.5 + 5000*6.25 = $0.1379
 assert_has "per-message cost is priced correctly" "$out" '~$0.14/msg'
 # 68300 / 82000 = 83%
@@ -85,6 +89,10 @@ json.dump(d,open('$long','w'))
 out="$(statusline <"$long")"
 assert_has "long-context alert renders" "$out" "LONG_CONTEXT"
 assert_eq "alert adds a fourth line" "$(printf '%s\n' "$out" | wc -l)" "4"
+# Deliberately steady, not blinking: the statusline repaints every 5s, so a blink
+# attribute compounds into flicker. Pinned so the choice cannot drift unnoticed.
+assert_lacks "alert does not blink" "$out" "$(printf '\033[5m')"
+assert_has "alert is red and bold instead" "$out" "$(printf '\033[91m\033[1m')"
 out="$(CLAUDE_STATUS_NO_ALERT=1 statusline <"$long")"
 assert_lacks "alert suppressed by CLAUDE_STATUS_NO_ALERT" "$out" "LONG_CONTEXT"
 
@@ -126,7 +134,8 @@ assert_has "tokens remaining before compaction" "$out" "left"
 assert_has "token counts ride along" "$out" "82k/200k"
 assert_lacks "no separate cmp gauge" "$out" "cmp"
 # 70% of a 14-cell bar puts the marker in cell 10 (index 9), after 5 filled cells.
-assert_has "marker sits at the threshold cell" "$out" "[#####----·----]"
+# Cells past it are dotted, not dashed: window the session is cut off before reaching.
+assert_has "marker sits at the threshold, rest dotted" "$out" "[#####----·····]"
 
 out="$(NO_COLOR=1 statusline <"$FIXTURES/statusline-full.json" | sed -n 2p)"
 assert_has "unmarked bar when auto-compact is unconfigured" "$out" "[#####---------]"
