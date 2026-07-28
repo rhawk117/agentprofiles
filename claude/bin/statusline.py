@@ -571,22 +571,9 @@ def main() -> int:
     if version:
         line1 += f"{SEP}{DIM}{ITALIC}v{version}{RESET}"
 
-    # ---- line 2: gauges (context, compact, rate limits) -----------------
-    gauges = [context_gauge(used_pct, tokens, window, compact_at)]
-    limits = rate_limit_state(data)
-    for key, label in (("five_hour", "5h"), ("seven_day", "7d")):
-        entry = limits.get(key)
-        if not entry:
-            continue
-        stamp = fmt_reset(entry.get("resets_at"))
-        tail = f"{DIM}{ITALIC}{stamp}{RESET}" if stamp else ""
-        if entry.get("stale"):
-            label = f"{DIM}{label}{RESET}"
-        gauges.append(gauge(label, as_int(entry.get("pct")), LIM_W, tail))
-    line2 = SEP.join(gauges)
-
-    # ---- line 3: session activity ---------------------------------------
+    # ---- line 2: context gauge and session activity ----------------------
     act = [
+        context_gauge(used_pct, tokens, window, compact_at),
         f"{GRAY}⟳ turns{RESET} {BOLD}{stats['turns']}{RESET}",
         f"{CYAN}⌕ tools{RESET} {BOLD}{stats['tools']}{RESET}",
     ]
@@ -598,23 +585,37 @@ def main() -> int:
         act.append(f"{MAGENTA}⌬ agents{RESET} {MAGENTA}{BOLD}{stats['agents']}{RESET}")
     if stats["errors"]:
         act.append(f"{RED}✕ err{RESET} {RED}{BOLD}{stats['errors']}{RESET}")
+    line2 = SEP.join(act)
+
+    # ---- line 3: rate limit budgets and what the session has spent -------
+    spend = []
+    limits = rate_limit_state(data)
+    for key, label in (("five_hour", "5h"), ("seven_day", "7d")):
+        entry = limits.get(key)
+        if not entry:
+            continue
+        stamp = fmt_reset(entry.get("resets_at"))
+        tail = f"{DIM}{ITALIC}{stamp}{RESET}" if stamp else ""
+        if entry.get("stale"):
+            label = f"{DIM}{label}{RESET}"
+        spend.append(gauge(label, as_int(entry.get("pct")), LIM_W, tail))
     if added or removed:
-        act.append(f"{GREEN}+{added}{RESET}/{RED}-{removed}{RESET}")
+        spend.append(f"{GREEN}+{added}{RESET}/{RED}-{removed}{RESET}")
     if cost_usd > 0:
         ccol = GREEN if cost_usd < 1 else YELLOW if cost_usd < 5 else RED
-        act.append(f"{ccol}${cost_usd:.2f}{RESET}")
+        spend.append(f"{ccol}${cost_usd:.2f}{RESET}")
     msg_cost = context_cost(usage, rates, fast)
     if msg_cost > 0:
-        act.append(f"{GRAY}~${msg_cost:.2f}/msg{RESET}")
+        spend.append(f"{GRAY}~${msg_cost:.2f}/msg{RESET}")
     if cost_usd > 0 and dur_ms >= BURN_MIN_MS:
-        act.append(f"{GRAY}${cost_usd * MS_PER_HOUR / dur_ms:.2f}/hr{RESET}")
+        spend.append(f"{GRAY}${cost_usd * MS_PER_HOUR / dur_ms:.2f}/hr{RESET}")
     cached = as_int(usage.get("cache_read_input_tokens"))
     if tokens > 0 and cached > 0:
         hit = min(100, cached * 100 // tokens)
-        act.append(f"{GRAY}cache{RESET} {grad_color(100 - hit)}{hit}%{RESET}")
+        spend.append(f"{GRAY}cache{RESET} {grad_color(100 - hit)}{hit}%{RESET}")
     if dur_ms > 0:
-        act.append(f"{DIM}{ITALIC}{human_dur(dur_ms)}{RESET}")
-    line3 = SEP.join(act)
+        spend.append(f"{DIM}{ITALIC}{human_dur(dur_ms)}{RESET}")
+    line3 = SEP.join(spend)
 
     lines = [line1, line2, line3]
     if dig(data, "exceeds_200k_tokens", default=False) and (
@@ -622,7 +623,9 @@ def main() -> int:
     ):
         lines.insert(1, f"{RED}{BOLD}(!) LONG_CONTEXT · premium input rate (!){RESET}")
 
-    print("\n".join(lines))
+    # A session with no rate limits and nothing spent yet has no third line;
+    # printing it blank would leave a gap under the statusline.
+    print("\n".join(line for line in lines if line))
     return 0
 
 

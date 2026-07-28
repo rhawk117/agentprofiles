@@ -60,6 +60,11 @@ assert_has "turns glyph" "$out" "⟳ turns"
 assert_has "tools glyph" "$out" "⌕ tools"
 assert_has "version rides on line 1" "$(printf '%s\n' "$out" | head -1)" "v2.1.214"
 assert_lacks "version is not on line 3" "$(printf '%s\n' "$out" | sed -n 3p)" "v2.1.214"
+# Line 2 is what the session is consuming now, line 3 is what it has spent.
+assert_has "activity sits with the context gauge" "$(printf '%s\n' "$out" | sed -n 2p)" "⌕ tools"
+assert_lacks "activity is not on the cost line" "$(printf '%s\n' "$out" | sed -n 3p)" "⌕ tools"
+assert_has "rate limits sit with cost" "$(printf '%s\n' "$out" | sed -n 3p)" "5h"
+assert_lacks "rate limits are not on the gauge line" "$(printf '%s\n' "$out" | sed -n 2p)" "5h"
 # 8500*5 + 1200*25 + 68300*0.5 + 5000*6.25 = $0.1379
 assert_has "per-message cost is priced correctly" "$out" '~$0.14/msg'
 # 68300 / 82000 = 83%
@@ -146,7 +151,7 @@ group "rate limit recording"
 
 # Isolated cache: the recorded limits file is account-wide, not per session.
 limits_home="$TMP/limits-cache"
-rl() { XDG_CACHE_HOME="$limits_home" NO_COLOR=1 statusline <"$1" | sed -n 2p; }
+rl() { XDG_CACHE_HOME="$limits_home" NO_COLOR=1 statusline <"$1" | sed -n 3p; }
 
 assert_lacks "no limits before any payload carries them" \
   "$(rl "$FIXTURES/statusline-minimal.json")" "5h"
@@ -169,7 +174,7 @@ d['rate_limits']={'five_hour':{'used_percentage':22,'resets_at':1000000000}}
 json.dump(d,open('$expired','w'))
 "
 XDG_CACHE_HOME="$expired_home" statusline <"$expired" >/dev/null
-out="$(XDG_CACHE_HOME="$expired_home" NO_COLOR=1 statusline <"$FIXTURES/statusline-minimal.json" | sed -n 2p)"
+out="$(XDG_CACHE_HOME="$expired_home" NO_COLOR=1 statusline <"$FIXTURES/statusline-minimal.json" | sed -n 3p)"
 assert_lacks "expired window is not replayed" "$out" "5h"
 
 # --------------------------------------------------------------------------

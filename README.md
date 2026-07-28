@@ -45,9 +45,11 @@ The installer removes four hooks from `~/.claude/hooks/` — `notify.sh`, `prote
 
 ```
 ★ Opus [high] ✻  ·  agentprofiles  ·  main ~1 ?1  ·  v2.1.214
-◉ [#####----·····] 41%  ◌ 82k/200k  58k left  ·  5h [#-------] 22% 8:53pm
-⟳ turns 12  ·  ⌕ tools 47  ·  +156/-23  ·  $0.31  ·  ~$0.14/msg  ·  $1.55/hr  ·  cache 83%  ·  12m
+◉ [#####----·····] 41%  ◌ 82k/200k  58k left  ·  ⟳ turns 12  ·  ⌕ tools 47
+5h [#-------] 22% 8:53pm  ·  7d [####----] 61% 12:00pm  ·  +156/-23  ·  $0.31  ·  ~$0.14/msg  ·  $1.55/hr  ·  cache 83%  ·  12m
 ```
+
+Line two is what the session is consuming right now, line three is what it has spent. A fresh session with no recorded limits and nothing billed yet prints only the first two.
 
 The glyph and colour on the model name come from `claude/model-rates.json`, which also prices `~$/msg` — what it costs to send the current context once, at the current model's rates.
 
