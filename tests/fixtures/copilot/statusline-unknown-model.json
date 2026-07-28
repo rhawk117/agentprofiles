@@ -1,0 +1,25 @@
+{
+  "_source": "hand-authored from docs, not captured from a live session",
+  "model": {
+    "id": "no-such-model-9",
+    "display_name": "No Such Model 9"
+  },
+  "reasoning_effort": "high",
+  "session_id": "smoke-unknown",
+  "version": "0.0.42",
+  "cwd": "/home/u/agentprofiles",
+  "cost": {
+    "total_duration_ms": 720000
+  },
+  "context_window": {
+    "current_context_tokens": 82000,
+    "displayed_context_limit": 200000,
+    "current_context_used_percentage": 41,
+    "last_call_input_tokens": 140000,
+    "total_input_tokens": 300000,
+    "total_output_tokens": 40000,
+    "total_cache_read_tokens": 0,
+    "total_cache_write_tokens": 0,
+    "total_reasoning_tokens": 12000
+  }
+}
