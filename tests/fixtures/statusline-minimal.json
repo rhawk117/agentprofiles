@@ -1,0 +1,11 @@
+{
+  "session_id": "smoke-minimal",
+  "model": { "id": "claude-opus-5", "display_name": "Opus" },
+  "workspace": { "current_dir": "/tmp" },
+  "context_window": {
+    "total_input_tokens": 12000,
+    "context_window_size": 200000,
+    "used_percentage": 6
+  },
+  "cost": { "total_cost_usd": 0.02, "total_duration_ms": 15000 }
+}

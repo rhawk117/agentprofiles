@@ -1,0 +1,17 @@
+{
+  "session_id": "smoke-unknown",
+  "model": { "id": "some-model-nobody-priced", "display_name": "Mystery" },
+  "workspace": { "current_dir": "/tmp" },
+  "context_window": {
+    "total_input_tokens": 82000,
+    "context_window_size": 200000,
+    "used_percentage": 41,
+    "current_usage": {
+      "input_tokens": 8500,
+      "output_tokens": 1200,
+      "cache_creation_input_tokens": 5000,
+      "cache_read_input_tokens": 68300
+    }
+  },
+  "cost": { "total_cost_usd": 0.31, "total_duration_ms": 720000 }
+}
