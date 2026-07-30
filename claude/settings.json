@@ -92,6 +92,16 @@
         ]
       }
     ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/bin/hooks/write_permission_mode.sh"
+          }
+        ]
+      }
+    ],
     "PreToolUse": [
       {
         "matcher": "Bash",
@@ -99,6 +109,14 @@
           {
             "type": "command",
             "command": "~/.claude/bin/hooks/protected_paths_guard.sh"
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/bin/hooks/write_permission_mode.sh"
           }
         ]
       }
@@ -111,7 +129,7 @@
             "type": "command",
             "command": "~/.claude/bin/hooks/ruff_on_edit.py"
           },
-          { "type": "command", "command": "~/claude/bin/hooks/edit_capper.py" }
+          { "type": "command", "command": "~/.claude/bin/hooks/edit_capper.py" }
         ]
       },
       {
@@ -147,9 +165,9 @@
   },
   "statusLine": {
     "type": "command",
-    "command": "~/.claude/bin/statusline.py",
-    "padding": 1,
-    "refreshInterval": 5
+    "command": "~/.claude/bin/statusline",
+    "padding": 0,
+    "refreshInterval": 1
   },
   "enabledPlugins": {
     "github@claude-plugins-official": false,

@@ -1,0 +1,38 @@
+{"type": "assistant", "message": {"role": "assistant", "content": [{"type": "tool_use", "name": "Read"}, {"type": "tool_use", "name": "Bash"}]}}
+{"type": "user", "message": {"role": "user", "content": [{"type": "tool_result", "is_error": false}]}}
+{"type": "assistant", "message": {"role": "assistant", "content": [{"type": "tool_use", "name": "Read"}, {"type": "tool_use", "name": "Bash"}]}}
+{"type": "user", "message": {"role": "user", "content": [{"type": "tool_result", "is_error": false}]}}
+{"type": "assistant", "message": {"role": "assistant", "content": [{"type": "tool_use", "name": "Read"}, {"type": "tool_use", "name": "Bash"}]}}
+{"type": "user", "message": {"role": "user", "content": [{"type": "tool_result", "is_error": false}]}}
+{"type": "assistant", "message": {"role": "assistant", "content": [{"type": "tool_use", "name": "Read"}, {"type": "tool_use", "name": "Bash"}, {"type": "tool_use", "name": "Task"}]}}
+{"type": "user", "message": {"role": "user", "content": [{"type": "tool_result", "is_error": false}]}}
+{"type": "assistant", "message": {"role": "assistant", "content": [{"type": "tool_use", "name": "Read"}, {"type": "tool_use", "name": "Bash"}]}}
+{"type": "user", "message": {"role": "user", "content": [{"type": "tool_result", "is_error": true}]}}
+{"type": "assistant", "message": {"role": "assistant", "content": [{"type": "tool_use", "name": "Read"}, {"type": "tool_use", "name": "Bash"}]}}
+{"type": "user", "message": {"role": "user", "content": [{"type": "tool_result", "is_error": false}]}}
+{"type": "assistant", "message": {"role": "assistant", "content": [{"type": "tool_use", "name": "Read"}, {"type": "tool_use", "name": "Bash"}]}}
+{"type": "user", "message": {"role": "user", "content": [{"type": "tool_result", "is_error": false}]}}
+{"type": "assistant", "message": {"role": "assistant", "content": [{"type": "tool_use", "name": "Read"}, {"type": "tool_use", "name": "Bash"}]}}
+{"type": "user", "message": {"role": "user", "content": [{"type": "tool_result", "is_error": false}]}}
+{"type": "assistant", "message": {"role": "assistant", "content": [{"type": "tool_use", "name": "Read"}, {"type": "tool_use", "name": "Bash"}]}}
+{"type": "user", "message": {"role": "user", "content": [{"type": "tool_result", "is_error": false}]}}
+{"type": "assistant", "message": {"role": "assistant", "content": [{"type": "tool_use", "name": "Read"}, {"type": "tool_use", "name": "Bash"}]}}
+{"type": "user", "message": {"role": "user", "content": [{"type": "tool_result", "is_error": false}]}}
+{"type": "assistant", "message": {"role": "assistant", "content": [{"type": "tool_use", "name": "Read"}, {"type": "tool_use", "name": "Bash"}, {"type": "tool_use", "name": "Task"}]}}
+{"type": "user", "message": {"role": "user", "content": [{"type": "tool_result", "is_error": false}]}}
+{"type": "assistant", "message": {"role": "assistant", "content": [{"type": "tool_use", "name": "Read"}, {"type": "tool_use", "name": "Bash"}]}}
+{"type": "user", "message": {"role": "user", "content": [{"type": "tool_result", "is_error": false}]}}
+{"type": "assistant", "message": {"role": "assistant", "content": [{"type": "tool_use", "name": "Read"}, {"type": "tool_use", "name": "Bash"}]}}
+{"type": "user", "message": {"role": "user", "content": [{"type": "tool_result", "is_error": false}]}}
+{"type": "assistant", "message": {"role": "assistant", "content": [{"type": "tool_use", "name": "Read"}, {"type": "tool_use", "name": "Bash"}]}}
+{"type": "user", "message": {"role": "user", "content": [{"type": "tool_result", "is_error": true}]}}
+{"type": "assistant", "message": {"role": "assistant", "content": [{"type": "tool_use", "name": "Read"}, {"type": "tool_use", "name": "Bash"}]}}
+{"type": "user", "message": {"role": "user", "content": [{"type": "tool_result", "is_error": false}]}}
+{"type": "assistant", "message": {"role": "assistant", "content": [{"type": "tool_use", "name": "Read"}, {"type": "tool_use", "name": "Bash"}]}}
+{"type": "user", "message": {"role": "user", "content": [{"type": "tool_result", "is_error": false}]}}
+{"type": "assistant", "message": {"role": "assistant", "content": [{"type": "tool_use", "name": "Read"}, {"type": "tool_use", "name": "Bash"}]}}
+{"type": "user", "message": {"role": "user", "content": [{"type": "tool_result", "is_error": false}]}}
+{"type": "assistant", "message": {"role": "assistant", "content": [{"type": "tool_use", "name": "Read"}, {"type": "tool_use", "name": "Bash"}, {"type": "tool_use", "name": "Task"}]}}
+{"type": "user", "message": {"role": "user", "content": [{"type": "tool_result", "is_error": false}]}}
+{"type": "assistant", "message": {"role": "assistant", "content": [{"type": "tool_use", "name": "Read"}, {"type": "tool_use", "name": "Bash"}]}}
+{"type": "user", "message": {"role": "user", "content": [{"type": "tool_result", "is_error": false}]}}

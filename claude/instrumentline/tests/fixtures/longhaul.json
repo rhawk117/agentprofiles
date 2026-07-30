@@ -1,0 +1,50 @@
+{
+  "session_id": "long01",
+  "transcript_path": "/home/claude/instrumentline/tests/fixtures/demo-transcript.jsonl",
+  "version": "2.1.220",
+  "model": {
+    "id": "fable-1-2",
+    "display_name": "Fable 1.2"
+  },
+  "workspace": {
+    "current_dir": "/home/r/reconflux",
+    "project_dir": "/home/r/reconflux"
+  },
+  "cost": {
+    "total_cost_usd": 9.2,
+    "total_duration_ms": 15360000,
+    "total_api_duration_ms": 5120000,
+    "total_lines_added": 1840,
+    "total_lines_removed": 920
+  },
+  "context_window": {
+    "total_input_tokens": 132000,
+    "total_output_tokens": 4200,
+    "context_window_size": 200000,
+    "used_percentage": 66.0,
+    "current_usage": {
+      "input_tokens": 6000,
+      "output_tokens": 1200,
+      "cache_creation_input_tokens": 4000,
+      "cache_read_input_tokens": 9000
+    }
+  },
+  "exceeds_200k_tokens": false,
+  "fast_mode": false,
+  "effort": {
+    "level": "xhigh"
+  },
+  "thinking": {
+    "enabled": true
+  },
+  "rate_limits": {
+    "five_hour": {
+      "used_percentage": 58,
+      "resets_at": 1785386997
+    },
+    "seven_day": {
+      "used_percentage": 79,
+      "resets_at": 1785730197
+    }
+  }
+}

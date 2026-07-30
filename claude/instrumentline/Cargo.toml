@@ -1,0 +1,56 @@
+[package]
+name = "instrumentline"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+description = "Animated, health-reactive status line for Claude Code"
+license = "MIT"
+repository = "https://github.com/hawkinsry19/instrumentline"
+readme = "README.md"
+keywords = ["claude", "statusline", "terminal", "ansi", "tui"]
+categories = ["command-line-utilities"]
+
+[lib]
+name = "instrumentline"
+path = "src/lib.rs"
+
+[[bin]]
+name = "instrumentline"
+path = "src/main.rs"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = "symbols"
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_debug_implementations = "deny"
+unreachable_pub = "deny"
+unused_qualifications = "deny"
+trivial_casts = "deny"
+trivial_numeric_casts = "deny"
+
+[lints.clippy]
+all = { level = "deny", priority = -1 }
+pedantic = { level = "deny", priority = -1 }
+nursery = { level = "deny", priority = -1 }
+cargo = { level = "deny", priority = -1 }
+
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+print_stderr = "allow"
+exit = "allow"
+
+module_name_repetitions = "allow"
+multiple_crate_versions = "allow"

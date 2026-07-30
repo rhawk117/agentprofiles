@@ -20,11 +20,33 @@ Verified by running the code on 2026-07-29, not inferred from the README.
 | Default state directory | `~/.claude/instrumentline-state/` (`src/config.rs:160`, `state_directory()`) |
 | `target/` is already gitignored | `.gitignore:76`, 95M on disk |
 | No test asserts on current glyph spacing | `tests/rendering.rs` references counts only, never rendered text |
+| **`./install.sh` is already broken on main** | `tests/smoke-claude.sh:297` fails; `install.sh:179` gates on it and exits 1 |
+| **A row can never overflow its budget** | `fit_to_width` ends in `truncated_to(columns)` (`src/render/layout.rs:29-46`) |
+| **Rows already lose content at 80 columns** | `COLUMNS=80` on `critical.json` row 3 ends mid-word: `cached - con` |
 
 The Claude tree currently links these paths (`install.sh` `MANAGED_FILES` / `MANAGED_DIRS`):
 `settings.json`, `CLAUDE.md`, `model-rates.json`, `bin/statusline.py`, and the contents of
 `bin/hooks`, `skills`, `agents`. `~/.claude/settings.json` is one of those symlinks, which is why
 editing it during development changes the running session.
+
+### The pre-existing manifest drift
+
+This blocks everything and is not caused by this change. Three files were added in earlier commits
+without updating the frozen manifest assertion:
+
+```
+agents/ci-watcher.md   bin/hooks/capper_simulate.py   bin/hooks/edit_capper.py
+```
+
+`manifest()` enumerates `MANAGED_DIRS` from the source tree, so it already emits them; only the
+frozen string in the test is stale. Because `install.sh` gates on the smoke suite, **nothing can be
+installed at all until this is fixed.**
+
+The user chose to absorb it: regenerate the frozen string to include these three alongside the new
+entries. The consequence, stated plainly because the frozen test exists precisely to stop it
+happening silently, is that **the installer will begin linking `ci-watcher.md` and both capper hooks
+into `~/.claude`.** That is what the auto-enumerating manifest was always going to do. Say so in the
+commit message.
 
 ## Decisions
 
@@ -125,15 +147,40 @@ it lives at `instrumentline/target/release/instrumentline` in the source tree bu
 MANAGED_BUILT=(bin/instrumentline=instrumentline/target/release/instrumentline)
 ```
 
-- `status_of()` takes an optional explicit source path as a second argument.
+**Three call sites consume the source path, not one.** An earlier draft of this design patched only
+`status_of()` and was wrong: the install loop at `install.sh:215` is `ln -sfn "$SRC/$rel"`, so a
+dest-side `rel` of `bin/instrumentline` would link to `claude/bin/instrumentline`, which does not
+exist. `[ -x ]` on a dangling symlink is false, so the shim would fall back to Python permanently
+while the installer reported success. Silent no-op, not a visible failure.
+
+Introduce one resolver and route every consumer through it:
+
+```bash
+# dest_rel -> src_rel, identity unless MANAGED_BUILT remaps it
+source_of() { ... }
+```
+
+- `status_of()` (`install.sh:107`) compares `readlink` against `$SRC/$(source_of "$rel")`.
+- The `--check` loop (`install.sh:134`) resolves through it.
+- **The install loop's `ln -sfn` (`install.sh:215`) resolves through it.** This is the one that was missed.
 - `manifest()` emits the dest side, so `--check` and `--print-manifest` cover the binary.
+
+Also:
+
 - Add `bin/statusline` to `MANAGED_FILES`.
 - New `--skip-build` flag.
 - Build runs before the smoke suite, because the suite needs the binary.
 - A missing `cargo` is a **warning, not an error**. Install proceeds and the shim falls back.
 
-Keep bash 3.2 compatibility. The file already avoids `declare -n` for this reason, so use parallel
-plain arrays rather than associative ones.
+**bash 3.2 constraints.** The file targets bash 3.2 because macOS ships it, which is why it avoids
+`declare -n`. Two consequences the earlier draft missed:
+
+- Under `set -u`, expanding an empty array as `"${MANAGED_BUILT[@]}"` is an unbound-variable error.
+  Use the guard the file already applies to `LEGACY_HOOKS` at `install.sh:155` and `:220`:
+  `${MANAGED_BUILT[@]+"${MANAGED_BUILT[@]}"}`.
+- `select_tree()` only assigns and never resets, so set `MANAGED_BUILT=()` explicitly in the copilot
+  branch (`install.sh:73-83`). Otherwise a stale claude value leaks across and the installer tries to
+  link `~/.copilot/bin/instrumentline`.
 
 ### 3. `claude/settings.json`
 
@@ -158,8 +205,21 @@ token. Add a space at each, giving a single rule: glyph, space, value.
 
 The model tier, branch, alert and health glyphs are already spaced and do not change.
 
-This widens rows 2 and 3 by about five columns. Render every fixture at `COLUMNS=80` and `COLUMNS=100`
-afterwards. If a fixture overflows at 80, report it rather than trimming something else to compensate.
+This widens rows 2 and 3 by about five columns.
+
+**Do not verify this by checking for overflow.** An earlier draft did, and the check is
+unfalsifiable: `fit_to_width` (`src/render/layout.rs:29-46`) drops priority groups until the line
+fits and then calls `truncated_to(columns)`, so a row cannot overflow by construction. The existing
+`no_row_ever_exceeds_the_column_budget` test in `tests/rendering.rs` asserts the same tautology and
+will stay green no matter how much content is lost.
+
+The real failure mode is silent content loss, and it is already happening before this change: at
+`COLUMNS=80`, `critical.json` row 3 ends mid-word at `cached - con`.
+
+Verify by capturing every fixture's ANSI-stripped rows at `COLUMNS=80` and `COLUMNS=100` **before**
+the edit, capturing them again after, and diffing. Report exactly what content each width loses.
+Do not redesign the layout or trim other content to compensate; the user decides separately once the
+cost is visible.
 
 ### 5. `tests/smoke-claude.sh`
 
@@ -173,9 +233,17 @@ New `group "instrumentline"`, skipped cleanly when no binary exists:
 Assertions must strip ANSI themselves, because the binary has no `NO_COLOR` support. The existing
 Python assertions rely on `NO_COLOR=1` and cannot be copied directly.
 
-**The frozen manifest assertion needs updating** for `bin/instrumentline`, `bin/statusline` and
-`bin/hooks/write_permission_mode.sh`. It is a sorted space-joined string; regenerate it from
-`install.sh --tree claude --print-manifest` rather than editing by hand.
+**Assert on the installed path, not just the source tree.** Rendering
+`claude/instrumentline/target/release/instrumentline` proves the binary works; it does not prove the
+installer wired it up. The dangling-symlink failure described in change 2 passes every source-tree
+assertion. So `install.sh --check` must additionally confirm that `~/.claude/bin/instrumentline`
+resolves to an existing file and is executable.
+
+**The frozen manifest assertion needs regenerating.** It must pick up `bin/instrumentline`,
+`bin/statusline`, `bin/hooks/write_permission_mode.sh` **and** the three pre-existing drift entries
+(`agents/ci-watcher.md`, `bin/hooks/capper_simulate.py`, `bin/hooks/edit_capper.py`). It is a sorted
+space-joined string; regenerate it from `install.sh --tree claude --print-manifest` rather than
+editing by hand.
 
 ### 6. `claude/instrumentline/README.md`
 
@@ -203,18 +271,23 @@ Grep for `~/claude` and `$HOME/claude` afterwards to confirm none survive.
 
 ## Verification
 
-Confirmed to run in this repo:
+These commands exist and were run on 2026-07-29. Their **current** status is recorded honestly: an
+earlier draft called them all "confirmed to run", which was false.
 
 ```sh
-cd claude/instrumentline && scripts/check.sh   # fmt, clippy, cargo test, shellcheck, rustdoc
-bash tests/smoke.sh                            # both trees
-SMOKE_TREE=claude bash tests/smoke.sh          # claude only
-./install.sh --check                           # audit, no writes
-./install.sh --tree claude --print-manifest    # regenerate the frozen assertion
+cd claude/instrumentline && scripts/check.sh   # not yet run; unknown
+bash tests/smoke.sh                            # RED today, see the manifest drift above
+SMOKE_TREE=claude bash tests/smoke.sh          # RED today, same cause
+./install.sh --check                           # runs
+./install.sh --tree claude --print-manifest    # runs; use it to regenerate the frozen string
 
-# no missing-dot paths survive anywhere; must print nothing
-grep -rn '~/claude\|\$HOME/claude' --exclude-dir=target .
+# Scoped to claude/ because the unscoped version matches this design document
+# five times and can therefore never print nothing.
+grep -rn '~/claude\|\$HOME/claude' --exclude-dir=target claude/
 ```
+
+The gate passes when `bash tests/smoke.sh` is green, `./install.sh --check` reports everything
+linked, and `~/.claude/bin/instrumentline` resolves to an executable file.
 
 Then, as the last step, restore the `~/.claude/settings.json` symlink and confirm the status line
 renders in a live session.

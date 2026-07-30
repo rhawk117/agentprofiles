@@ -9,6 +9,7 @@
 #   ./install.sh --check            audit only, no writes
 #   ./install.sh --print-manifest   list the managed paths and exit
 #   ./install.sh --skip-tests       skip the smoke suite (not recommended)
+#   ./install.sh --skip-build       do not cargo build instrumentline
 set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -18,12 +19,14 @@ BOLD=$'\033[1m' GREEN=$'\033[32m' YELLOW=$'\033[33m' RED=$'\033[31m' GRAY=$'\033
 
 check_only=0
 skip_tests=0
+skip_build=0
 print_manifest=0
 tree=all
 while [ $# -gt 0 ]; do
   case "$1" in
     --check) check_only=1 ;;
     --skip-tests) skip_tests=1 ;;
+    --skip-build) skip_build=1 ;;
     --print-manifest) print_manifest=1 ;;
     --tree)
       shift
@@ -31,7 +34,7 @@ while [ $# -gt 0 ]; do
       ;;
     --tree=*) tree="${1#--tree=}" ;;
     -h | --help)
-      sed -n '2,12p' "${BASH_SOURCE[0]}" | sed 's/^# \?//'
+      sed -n '2,13p' "${BASH_SOURCE[0]}" | sed 's/^# \?//'
       exit 0
       ;;
     *)
@@ -60,8 +63,10 @@ select_tree() {
       SRC="$REPO/claude"
       DEST="${CLAUDE_HOME:-$HOME/.claude}"
       # Individually linked; a whole-directory link would hide global-only content.
-      MANAGED_FILES=(settings.json CLAUDE.md model-rates.json bin/statusline.py)
+      MANAGED_FILES=(settings.json CLAUDE.md model-rates.json bin/statusline bin/statusline.py)
       MANAGED_DIRS=(bin/hooks skills agents)
+      # dest=src. The binary is built into target/ but installs to bin/.
+      MANAGED_BUILT=(bin/instrumentline=instrumentline/target/release/instrumentline)
       # Superseded by bin/hooks/*: hyphenated names, no longer in settings.json.
       LEGACY_HOOKS=(
         hooks/notify.sh
@@ -80,8 +85,26 @@ select_tree() {
       # directory holding session-store.db, session-state/ and logs/.
       MANAGED_DIRS=(hooks hooks/bin agents skills)
       LEGACY_HOOKS=()
+      # Required, not incidental: select_tree only assigns, so a stale claude
+      # value would leak across and link ~/.copilot/bin/instrumentline.
+      MANAGED_BUILT=()
       ;;
   esac
+}
+
+# dest_rel -> src_rel. Identity unless MANAGED_BUILT remaps it. Every consumer
+# of a source path must go through this: status_of, the --check loop and the
+# install loop's ln. A missed one silently links a dangling symlink, which the
+# shim then reads as "not installed" and falls back from, forever.
+source_of() {
+  local rel="$1" pair
+  for pair in ${MANAGED_BUILT[@]+"${MANAGED_BUILT[@]}"}; do
+    if [ "${pair%%=*}" = "$rel" ]; then
+      printf '%s\n' "${pair#*=}"
+      return
+    fi
+  done
+  printf '%s\n' "$rel"
 }
 
 # Every path this installer manages, relative to both trees.
@@ -101,11 +124,18 @@ manifest() {
       printf '%s/%s\n' "$dir" "$name"
     done
   done
+  # Emitted even when unbuilt: the manifest describes what is managed, not what
+  # happens to exist, and a build-dependent manifest would make the frozen
+  # assertion in the smoke suite flap.
+  local pair
+  for pair in ${MANAGED_BUILT[@]+"${MANAGED_BUILT[@]}"}; do
+    printf '%s\n' "${pair%%=*}"
+  done
 }
 
 # ok | broken | foreign | replaced | missing
 status_of() {
-  local rel="$1" link="$DEST/$1" want="$SRC/$1"
+  local rel="$1" link="$DEST/$1" want="$SRC/$(source_of "$1")"
   if [ -L "$link" ]; then
     [ "$(readlink -- "$link")" = "$want" ] || { echo foreign; return; }
     [ -e "$link" ] && echo ok || echo broken
@@ -173,6 +203,21 @@ command -v python3 >/dev/null 2>&1 || {
   exit 1
 }
 
+# Before the smoke suite, which asserts on the built binary. A missing or failing
+# cargo is a warning: the install still proceeds, the unbuilt link is skipped,
+# and bin/statusline falls back to the python line.
+if [ "$skip_build" -eq 0 ] && printf '%s\n' "${TREES[@]}" | grep -qx claude; then
+  if command -v cargo >/dev/null 2>&1; then
+    printf '%sbuilding instrumentline%s\n' "$BOLD" "$RESET"
+    (cd "$REPO/claude/instrumentline" && cargo build --release) || {
+      printf '%sbuild failed; the status line will fall back to python%s\n' "$YELLOW" "$RESET" >&2
+    }
+    printf '\n'
+  else
+    printf '%scargo not found; the status line will fall back to python%s\n' "$YELLOW" "$RESET" >&2
+  fi
+fi
+
 if [ "$skip_tests" -eq 0 ]; then
   printf '%srunning smoke tests%s\n' "$BOLD" "$RESET"
   # Only the trees being installed, so a red assertion in one cannot block the other.
@@ -211,8 +256,15 @@ for t in "${TREES[@]}"; do
     fi
     # A broken or foreign symlink has nothing worth keeping; a real file does.
     [ "$status" = replaced ] && preserve "$rel"
+    src_rel="$(source_of "$rel")"
+    # Linking a source that is not there yields a dangling symlink, which the
+    # shim reads as "not installed" but --check reports as broken. Skip instead.
+    if [ ! -e "$SRC/$src_rel" ]; then
+      printf '  %sskip%s    %s %s(not built)%s\n' "$YELLOW" "$RESET" "$rel" "$GRAY" "$RESET"
+      continue
+    fi
     mkdir -p "$DEST/$(dirname "$rel")"
-    ln -sfn "$SRC/$rel" "$DEST/$rel"
+    ln -sfn "$SRC/$src_rel" "$DEST/$rel"
     printf '  %slink%s  %s\n' "$GREEN" "$RESET" "$rel"
     linked=$((linked + 1))
   done < <(manifest)

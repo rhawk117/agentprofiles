@@ -1,0 +1,50 @@
+{
+  "session_id": "squeeze1",
+  "transcript_path": "/home/claude/instrumentline/tests/fixtures/demo-transcript.jsonl",
+  "version": "2.1.220",
+  "model": {
+    "id": "claude-opus-4-8",
+    "display_name": "Opus 4.8"
+  },
+  "workspace": {
+    "current_dir": "/home/r/reconflux",
+    "project_dir": "/home/r/reconflux"
+  },
+  "cost": {
+    "total_cost_usd": 14.4,
+    "total_duration_ms": 9600000,
+    "total_api_duration_ms": 3200000,
+    "total_lines_added": 2210,
+    "total_lines_removed": 1180
+  },
+  "context_window": {
+    "total_input_tokens": 520000,
+    "total_output_tokens": 4200,
+    "context_window_size": 1000000,
+    "used_percentage": 52.0,
+    "current_usage": {
+      "input_tokens": 2000,
+      "output_tokens": 1200,
+      "cache_creation_input_tokens": 800,
+      "cache_read_input_tokens": 16000
+    }
+  },
+  "exceeds_200k_tokens": true,
+  "fast_mode": false,
+  "effort": {
+    "level": "high"
+  },
+  "thinking": {
+    "enabled": true
+  },
+  "rate_limits": {
+    "five_hour": {
+      "used_percentage": 93,
+      "resets_at": 1785386997
+    },
+    "seven_day": {
+      "used_percentage": 88,
+      "resets_at": 1785730197
+    }
+  }
+}

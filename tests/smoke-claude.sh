@@ -97,6 +97,8 @@ m=importlib.util.module_from_spec(s); s.loader.exec_module(m)
 print(' '.join('on' if m.pulse(t) == '\033[4m' else 'off' for t in (100.0, 101.0, 102.4, 103.9)))")" \
   "off on off on"
 # refreshInterval must stay odd, or idle repaints land on one phase and never flash.
+# This guards the python fallback only: instrumentline drives its own animation
+# and does not use the pulse. The shim decides which one actually runs.
 assert_eq "refreshInterval keeps the pulse alternating while idle" \
   "$(python3 -c "
 import json
@@ -288,13 +290,142 @@ out="$(printf '{"message":"hi","title":"test"}' | PATH="$sandbox" "$HOOKS/notify
 assert_eq "exits 0 with no notifier available" "$?" "0"
 
 # --------------------------------------------------------------------------
+group "write_permission_mode.sh"
+
+# permission_mode is absent from the statusline payload but present in hook
+# input, so the hook records it per session for instrumentline to read.
+mode_hook() { printf '%s' "$1" | INSTRUMENTLINE_STATE_DIR="$TMP/modestate" "$HOOKS/write_permission_mode.sh"; }
+
+rm -rf "$TMP/modestate"
+mode_hook '{"session_id":"abc-123","permission_mode":"plan"}'
+assert_eq "writes the mode for the session" "$(cat "$TMP/modestate/abc-123.mode" 2>/dev/null)" "plan"
+
+mode_hook '{"session_id":"abc-123","permission_mode":"acceptEdits"}'
+assert_eq "overwrites on mode change" "$(cat "$TMP/modestate/abc-123.mode" 2>/dev/null)" "acceptEdits"
+
+# A path separator in the session id must not escape the state directory.
+mode_hook '{"session_id":"../escape","permission_mode":"plan"}'
+assert_eq "sanitises the session id" \
+  "$([ -e "$TMP/escape.mode" ] && echo leaked || echo contained)" "contained"
+
+# Missing fields exit 0 without writing, so a hook failure never blocks a tool call.
+mode_hook '{"session_id":"only-id"}'
+assert_eq "missing mode exits 0" "$?" "0"
+assert_eq "missing mode writes nothing" \
+  "$([ -e "$TMP/modestate/only-id.mode" ] && echo wrote || echo silent)" "silent"
+mode_hook 'not json'
+assert_eq "malformed input exits 0" "$?" "0"
+
+# --------------------------------------------------------------------------
+group "statusline shim"
+
+# A private CLAUDE_HOME so the assertions never depend on what is really installed.
+shim_home="$TMP/shimhome"
+mkdir -p "$shim_home/bin"
+cp "$CLAUDE/bin/statusline.py" "$shim_home/bin/statusline.py"
+
+shim() { CLAUDE_HOME="$shim_home" "$CLAUDE/bin/statusline" <"$FIXTURES/statusline-full.json"; }
+
+# The python line prints a verdict glyph; instrumentline does not. That is the discriminator.
+out="$(shim)"
+assert_eq "falls back to python when no binary is installed" "$?" "0"
+assert_has "python line actually rendered" "$out" "★"
+
+il_binary="$REPO/claude/instrumentline/target/release/instrumentline"
+if [ -x "$il_binary" ]; then
+  ln -sf "$il_binary" "$shim_home/bin/instrumentline"
+  out="$(shim)"
+  assert_eq "prefers instrumentline when it is installed" "$?" "0"
+  assert_lacks "python line did not run" "$out" "★"
+  assert_eq "instrumentline rendered three rows" "$(printf '%s\n' "$out" | wc -l | tr -d ' ')" "3"
+  rm -f "$shim_home/bin/instrumentline"
+else
+  printf '  \033[33mskip\033[0m  instrumentline not built (run cargo build --release)\n'
+fi
+
+# A non-executable file must not be selected; it would produce a blank status bar.
+: >"$shim_home/bin/instrumentline"
+chmod 644 "$shim_home/bin/instrumentline"
+assert_has "ignores a non-executable binary" "$(shim)" "★"
+rm -f "$shim_home/bin/instrumentline"
+
+# --------------------------------------------------------------------------
+group "instrumentline"
+
+IL="$REPO/claude/instrumentline/target/release/instrumentline"
+if [ ! -x "$IL" ]; then
+  printf '  \033[33mskip\033[0m  not built (run cargo build --release)\n'
+else
+  # The binary has no NO_COLOR support, so strip escapes here rather than
+  # reaching for the NO_COLOR=1 pattern the python assertions above use.
+  ESC="$(printf '\033')"
+  strip_ansi() { sed "s/${ESC}\[[0-9;]*m//g"; }
+  # An isolated state dir: the binary persists eased values per session.
+  il() { INSTRUMENTLINE_STATE_DIR="$TMP/ilstate" "$IL" render; }
+
+  for fixture in "$REPO"/claude/instrumentline/tests/fixtures/*.json; do
+    name="$(basename "$fixture")"
+    out="$(il <"$fixture")"
+    assert_eq "$name exits 0" "$?" "0"
+    assert_eq "$name renders three rows" "$(printf '%s\n' "$out" | wc -l | tr -d ' ')" "3"
+  done
+
+  # A status line that dies leaves a blank bar, so every failure path must render.
+  out="$(printf '{}' | il)"
+  assert_eq "empty object exits 0" "$?" "0"
+  assert_eq "empty object still renders three rows" "$(printf '%s\n' "$out" | wc -l | tr -d ' ')" "3"
+  out="$(printf '{"model":{' | il)"
+  assert_eq "malformed json exits 0" "$?" "0"
+  assert_eq "malformed json still renders three rows" "$(printf '%s\n' "$out" | wc -l | tr -d ' ')" "3"
+
+  # Bare invocation must behave as `render`, since the shim relies on the subcommand.
+  out="$(printf '{}' | INSTRUMENTLINE_STATE_DIR="$TMP/ilstate" "$IL")"
+  assert_eq "bare invocation defaults to render" "$(printf '%s\n' "$out" | wc -l | tr -d ' ')" "3"
+
+  assert_has "doctor reports a writable state dir" \
+    "$(INSTRUMENTLINE_STATE_DIR="$TMP/ilstate" "$IL" doctor | strip_ansi)" "state writable  yes"
+fi
+
+# --------------------------------------------------------------------------
+group "installer built-artifact resolution"
+
+# Rendering the binary out of target/ proves the binary works; it does not prove
+# the installer wired it up. A dest-side path linked against $SRC/$rel yields
+# ~/.claude/bin/instrumentline -> claude/bin/instrumentline, which does not
+# exist, and the shim then falls back to python forever while install reports
+# success. These assertions exist to catch exactly that.
+fake_dest="$TMP/fakeclaude"
+mkdir -p "$fake_dest"
+CLAUDE_HOME="$fake_dest" bash "$REPO/install.sh" --tree claude --skip-tests --skip-build >/dev/null 2>&1
+
+if [ -x "$REPO/claude/instrumentline/target/release/instrumentline" ]; then
+  assert_eq "the installed binary resolves to a real file" \
+    "$([ -e "$fake_dest/bin/instrumentline" ] && echo resolves || echo dangling)" "resolves"
+  assert_eq "the installed binary is executable" \
+    "$([ -x "$fake_dest/bin/instrumentline" ] && echo yes || echo no)" "yes"
+  assert_eq "it points at the build output, not bin/" \
+    "$(readlink "$fake_dest/bin/instrumentline")" \
+    "$REPO/claude/instrumentline/target/release/instrumentline"
+else
+  assert_eq "an unbuilt binary is skipped, not left dangling" \
+    "$([ -L "$fake_dest/bin/instrumentline" ] && echo dangling || echo skipped)" "skipped"
+fi
+
+assert_eq "the shim was installed as a link" \
+  "$(readlink "$fake_dest/bin/statusline")" "$CLAUDE/bin/statusline"
+
+# MANAGED_BUILT must not leak across trees via select_tree.
+assert_lacks "the copilot manifest has no binary" \
+  "$(bash "$REPO/install.sh" --tree copilot --print-manifest | cut -f2)" "instrumentline"
+
+# --------------------------------------------------------------------------
 group "installer manifest"
 
 # Frozen. The installer grew a second tree; the set of paths it links into
 # ~/.claude must not have moved as a side effect.
 assert_eq "the Claude manifest is unchanged" \
   "$(bash "$REPO/install.sh" --tree claude --print-manifest | cut -f2 | sort | tr '\n' ' ')" \
-  "CLAUDE.md agents/code-analyst.md agents/engineer.md agents/plan-critic.md agents/scout.md bin/hooks/notify.sh bin/hooks/protected_paths_guard.sh bin/hooks/read_logger.py bin/hooks/ruff_on_edit.py bin/hooks/session_context.sh bin/statusline.py model-rates.json settings.json skills/pysymbols "
+  "CLAUDE.md agents/ci-watcher.md agents/code-analyst.md agents/engineer.md agents/plan-critic.md agents/scout.md bin/hooks/capper_simulate.py bin/hooks/edit_capper.py bin/hooks/notify.sh bin/hooks/protected_paths_guard.sh bin/hooks/read_logger.py bin/hooks/ruff_on_edit.py bin/hooks/session_context.sh bin/hooks/write_permission_mode.sh bin/instrumentline bin/statusline bin/statusline.py model-rates.json settings.json skills/pysymbols "
 
 # --------------------------------------------------------------------------
 group "settings.json wiring"
@@ -317,6 +448,18 @@ commands = [settings.get("statusLine", {}).get("command", "")]
 for entries in settings.get("hooks", {}).values():
     for entry in entries:
         commands += [hook.get("command", "") for hook in entry.get("hooks", [])]
+
+# A path missing its dot resolves to nothing, and because the extraction below
+# only matches ~/.claude it would slip past every check that follows. That is
+# exactly how ~/claude/bin/hooks/edit_capper.py once went unnoticed.
+dotless = sorted(
+    m for command in commands
+    for m in re.findall(r"(?:~|\$HOME|\$\{HOME\})/claude/\S+", command)
+)
+if dotless:
+    print(f"  \033[31mFAIL\033[0m  every referenced path says .claude, not claude\n        {', '.join(dotless)}")
+    raise SystemExit(1)
+print("  \033[32mok\033[0m    no referenced path is missing its dot")
 
 referenced = set()
 for command in commands:

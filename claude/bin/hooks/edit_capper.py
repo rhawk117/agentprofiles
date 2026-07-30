@@ -18,7 +18,7 @@ def serialized(value) -> str:
         return value
     try:
         return json.dumps(value)
-    except TypeError, ValueError:
+    except (TypeError, ValueError):
         return str(value)
 
 
@@ -104,7 +104,7 @@ def build(tool: str, path: Path, tool_input: dict, original: int) -> str | None:
 def main() -> int:
     try:
         payload = json.load(sys.stdin)
-    except ValueError, OSError:
+    except (ValueError, OSError):
         return 0
 
     tool = payload.get("tool_name", "")
