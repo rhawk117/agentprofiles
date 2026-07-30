@@ -179,8 +179,27 @@ Python assertions rely on `NO_COLOR=1` and cannot be copied directly.
 
 ### 6. `claude/instrumentline/README.md`
 
-The install section currently describes `cargo install` into `~/.local/bin` and hooks at
-`~/claude/bin/hooks/` (note: missing the dot). Replace it with a pointer to `./install.sh`.
+The README is wrong in two ways, in two separate subsections. Both must be fixed.
+
+**The path is `~/.claude`, not `~/claude`.** The missing dot appears three times, and only the first
+is inside the install section:
+
+| Line | Context |
+| --- | --- |
+| 49 | `install -Dm755 hooks/write-permission-mode.sh ~/claude/bin/hooks/...` |
+| 64 | the `UserPromptSubmit` hook command in the settings.json block |
+| 67 | the `PreToolUse` hook command in the settings.json block |
+
+Anyone who followed this README verbatim created a stray `~/claude/` directory and a hook that never
+fired, so the status line would have shown the default permission mode forever. Nothing in the repo
+currently references the wrong path, so this is documentation-only.
+
+**The install and settings instructions are superseded.** Replace the install section with a pointer
+to `./install.sh`, and update the settings.json block to the real wiring: `statusLine.command` of
+`~/.claude/bin/statusline`, `refreshInterval` 1, `padding` 0, and the hook at
+`~/.claude/bin/hooks/write_permission_mode.sh` (underscores, per the rename in change 2).
+
+Grep for `~/claude` and `$HOME/claude` afterwards to confirm none survive.
 
 ## Verification
 
@@ -192,6 +211,9 @@ bash tests/smoke.sh                            # both trees
 SMOKE_TREE=claude bash tests/smoke.sh          # claude only
 ./install.sh --check                           # audit, no writes
 ./install.sh --tree claude --print-manifest    # regenerate the frozen assertion
+
+# no missing-dot paths survive anywhere; must print nothing
+grep -rn '~/claude\|\$HOME/claude' --exclude-dir=target .
 ```
 
 Then, as the last step, restore the `~/.claude/settings.json` symlink and confirm the status line
